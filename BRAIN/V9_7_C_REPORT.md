@@ -1,0 +1,9 @@
+# V9.7-C — cognição adaptativa
+
+Implementação parcial: `ModelResidencyManager.recommend_resident` recomenda somente modelos HOT, com função pretendida, contexto e latência medidos compatíveis e admissão de recursos aprovada. Com evidência ausente retorna INSUFFICIENT_EVIDENCE. Não carrega, descarrega nem autoriza ação. O consumidor deve fornecer medições confiáveis; não há verificação de atualidade das medições e a admissão de modelos já residentes pode ser conservadora. Não há integração desta seleção ao Kernel.
+
+Integrações existentes no Kernel: memória situacional e índice FHRR são opt-in por BRAINNET_SITUATION_FHRR=1, registram eventos e fornecem evidências ao contexto de decisão; P-DAG propõe procedimentos verificados para revisão. CausalTrajectoryEngine inicia syntactic_pdag como None, portanto a recuperação GHRR não está ativa por padrão. Não foi comprovada integração de H-Mem ao planejador. O Kernel chama o REM existente, que inclui rotinas de poda e reciclagem potencialmente destrutivas; não foi executado nem usado como consolidação experimental nesta missão.
+
+Pendências: integração de memória relevante ao planejador, alternativas limitadas, comparação por evidência independente, replanejamento, propostas REM não verificadas com teste isolado, seleção ativa de modelos e comparação FAST/DEEP com e sem memória. Não foi medida latência de planejamento ou consumo de RAM/VRAM, nem iniciados modelos reais; testes simulados não comprovam inferência real.
+
+Validação: 21 testes seguros aprovados em 1,92 s, incluindo seleção, residência, memória situacional e GHRR; desenvolvimento em test_v97c_residency_selection.py e log development_logs/V9_7_C_TESTS.log. Checkpoint development_logs/checkpoints/v97c/model_residency_manager.py. Nenhuma atuação física ou autoedição foi executada.

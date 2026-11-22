@@ -1,0 +1,22 @@
+@echo off
+title BRAINNET - Sistema Operacional Cognitivo
+echo ====================================================
+echo INICIANDO O ORGANISMO BRAINNET...
+echo ====================================================
+
+echo [1/3] Iniciando Vite da GUI Principal (Porta 5173)...
+start "Vite GUI 5173" /D "A:\BRAINNET\INTERFACE DE USUARIO\BRAINDET IU\project" cmd /c "npm run dev"
+
+echo [2/3] Iniciando Vite da Hotbar (Porta 5174)...
+start "Vite Hotbar 5174" /D "A:\BRAINNET\INTERFACE DE USUARIO\hotbar velha\project" cmd /c "npm run dev"
+
+echo Aguardando os servidores Vite compilarem (10 segundos)...
+timeout /t 10 /nobreak >nul
+
+echo [3/3] Iniciando o Kernel (Python)...
+cd /d "A:\BRAINNET\BRAIN"
+py -3.12 BRAINNET.py
+
+echo.
+echo O Kernel encerrou. Pressione qualquer tecla para fechar esta janela.
+pause >nul

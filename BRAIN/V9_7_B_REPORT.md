@@ -1,0 +1,7 @@
+# V9.7-B — atenção visual e previsão de falhas
+
+Implementação parcial: o mapa de cena existente expõe `assess_target`, com indicadores de alvo ausente, ambíguo, limites desconhecidos, incerteza da observação ou falta de controle nativo. A recomendação é reobservar ou considerar alternativa quando há indicadores; sem indicadores exige revalidação. Nenhuma probabilidade calibrada é afirmada e nenhuma autorização é concedida. `BrainnetKernel.observe_ui_scene`, quando explicitamente ativado, devolve essa avaliação para um alvo solicitado.
+
+Validação simulada: 36 testes e 3 subtestes aprovados em 1,37 s; log development_logs/V9_7_B_TESTS_FINAL.log. Testes incluem cenários existentes de cena, atenção e geometrias de monitores, mais alvo ausente e ambíguo. Checkpoints em development_logs/checkpoints/v97b. Nenhum mouse, teclado ou modelo real acionado.
+
+Pendências: a avaliação ainda não é chamada automaticamente antes de atuação nem alimentada com histórico estatístico; não existe aprendizado ou comparação adicional de objetivo e efeito nesta alteração. Identificação Windows↔MSS e DPI real continuam não confirmadas. Não foi conectado OCR ou ROI adicional ao ciclo, nem implementada reobservação automática, mapa continuamente atualizado, ou validação real de Paint, Notepad e clipboard. O módulo existente de atenção é opt-in e o mapa é efêmero. Resultados simulados não comprovam desempenho em hardware real. Nenhuma métrica de probabilidade, acerto ou desempenho foi medida.

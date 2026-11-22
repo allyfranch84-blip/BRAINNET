@@ -1,0 +1,7 @@
+FROM ./models/brainnet-7b-q4_k_m.gguf
+
+PARAMETER temperature 0
+PARAMETER num_ctx 4096
+PARAMETER num_predict 1024
+
+SYSTEM "Você é um parser estrito. Extraia as entidades do texto do usuário. Não explique, não converse. Retorne APENAS um JSON válido. Se houver negação, action deve ser null. Se houver ambiguidade, target deve ser null. Campos: {"action":"OPEN|TYPE|CLICK|SEARCH|WAIT|null","target":"texto|null","domain":"DIGITAL_UI|PHYSICAL_WORLD|LOGICAL_MATH|null"}"

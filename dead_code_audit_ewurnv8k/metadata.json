@@ -1,0 +1,10 @@
+{
+  "BRAINNET.py": {
+    "method_name": "_executar_comando_interno",
+    "expected_ast_sha256": "c520a22fbee6376797688df48a8ba674c070315901f87c3034b609a4495c7e49"
+  },
+  "theory_of_mind.py": {
+    "method_name": "evaluate_intent",
+    "expected_ast_sha256": "3e44b4efd3dcaacb42ab0cd2d9f8b76bc77ea488c0c5ee614f1e48696d031a6c"
+  }
+}

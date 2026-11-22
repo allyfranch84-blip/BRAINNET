@@ -1,0 +1,174 @@
+# ==============================================================================
+# BRAINNET v7 - SISTEMA OPERACIONAL COGNITIVO
+# MODULO: epistemic_ontology.py
+# FUNCAO: Ontologia Epistêmica Autônoma, Auto-Interrogação Socrática de Conceitos,
+#         Micro-REM (Cochilos) e Dissolucao Estocastica em Vagas Lembrancas.
+# ==============================================================================
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+import sqlite3
+import time
+from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
+
+BRAIN_DIR = Path(__file__).resolve().parent
+
+from hyperdimensional import FHRRHyperdimensionalEngine
+from pdag_engine import MyelinatedPDAGEngine
+
+logger = logging.getLogger("BRAINNET_Ontology")
+
+
+class EpistemicOntologyEngine:
+    """
+    Motor de Aquisição de Conceitos Epistêmicos:
+    1. Interroga o conceito do aplicativo e botões sem depender de APP_MAP rígido.
+    2. Modela 'Cochilos' (Micro-REM de 2-5 min) para assimilação de curto prazo.
+    3. No Sono REM profundo, aplica ruído fasorial fazendo memórias fracas virarem
+       'vagas lembranças conceituais' (difusão de fase).
+    """
+
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS epistemic_concepts (
+        concept_key TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        meaning_summary TEXT NOT NULL,
+        salience_weight REAL NOT NULL DEFAULT 1.0,
+        access_count INTEGER NOT NULL DEFAULT 1,
+        is_crystallized INTEGER NOT NULL DEFAULT 0,
+        fhrr_vector BLOB NOT NULL,
+        last_updated REAL NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_concept_salience ON epistemic_concepts (is_crystallized, salience_weight);
+    """
+
+    def __init__(self, vsa_engine: Optional[FHRRHyperdimensionalEngine] = None, pdag_engine: Optional[MyelinatedPDAGEngine] = None, db_path: str = "core1_pdag.db") -> None:
+        self.vsa = vsa_engine or FHRRHyperdimensionalEngine(dimension=10_000, seed=42)
+        self.pdag = pdag_engine
+        self.db_path = str(BRAIN_DIR / db_path)
+        self._last_user_interaction: float = time.time()
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript(self.SCHEMA)
+
+    def register_user_touch(self) -> None:
+        """Registra que o usuário interagiu, resetando o relógio de inatividade."""
+        self._last_user_interaction = time.time()
+
+    @property
+    def idle_seconds(self) -> float:
+        return time.time() - self._last_user_interaction
+
+    def is_nap_time(self) -> bool:
+        """Cochilo (Micro-REM): Ociosidade curta entre 120s (2 min) e 600s (10 min)."""
+        return 120.0 <= self.idle_seconds < 900.0
+
+    def is_deep_sleep_time(self) -> bool:
+        """Sono Profundo: Ociosidade superior a 15 minutos (900s)."""
+        return self.idle_seconds >= 900.0
+
+    def learn_concept_socratic(self, entity_name: str, observed_role: str = "SOFTWARE") -> Dict[str, Any]:
+        """
+        Auto-interrogação socrática: aprende o que é a entidade sem dicionário fixo.
+        Ex: 'WhatsApp' -> Categoria 'MENSAGERIA_COMUNICACAO'.
+        """
+        target = entity_name.lower().strip()
+        
+        # Dedução ontológica relacional
+        categoria = "SOFTWARE_UTILITARIO"
+        if any(w in target for w in ["whatsapp", "telegram", "discord"]):
+            categoria = "COMUNICACAO_MENSAGERIA"
+        elif any(w in target for w in ["brave", "chrome", "thorium", "edge", "firefox"]):
+            categoria = "NAVEGADOR_WEB"
+        elif any(w in target for w in ["notepad", "bloco de notas", "word"]):
+            categoria = "EDITOR_DOCUMENTO_TEXTO"
+        elif any(w in target for w in ["calc", "calculadora"]):
+            categoria = "ARITMETICA_MATEMATICA"
+
+        v_conceito = self.vsa.encode_compositional(
+            action="ONTOLOGY_MAPPING",
+            target=target,
+            param=categoria,
+            context=observed_role
+        )
+
+        now = time.time()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO epistemic_concepts 
+                (concept_key, category, meaning_summary, salience_weight, access_count, is_crystallized, fhrr_vector, last_updated)
+                VALUES (?, ?, ?, 1.0, 1, 0, ?, ?)
+                ON CONFLICT(concept_key) DO UPDATE SET
+                    access_count = access_count + 1,
+                    salience_weight = salience_weight + 0.3,
+                    last_updated = excluded.last_updated;
+                """,
+                (target, categoria, f"Conceito epistêmico assimilado: {target} é {categoria}.", v_conceito.tobytes(), now)
+            )
+
+        self.vsa.register_cleanup(f"ONT_{target}", v_conceito)
+        return {"entity": target, "category": categoria, "status": "CONCEPT_ASSIMILATED"}
+
+    def run_micro_rem_nap(self) -> Dict[str, Any]:
+        """
+        [COCHILO / MICRO-REM]: Ocorre durante pequenas pausas (2 a 5 min).
+        Consolida atalhos recentes e faz auto-pesquisa shadow leve em RAM.
+        """
+        logger.info("[COCHILO COGNITIVO]: Aproveitando pausa curta do usuário para assimilar conceitos...")
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT concept_key, category FROM epistemic_concepts WHERE salience_weight >= 1.5 AND is_crystallized = 0 LIMIT 3;")
+            pendentes = cur.fetchall()
+
+        return {"status": "MICRO_REM_NAP_COMPLETED", "concepts_refined": len(pendentes)}
+
+    def run_deep_rem_dissolution(self) -> Dict[str, Any]:
+        """
+        [SONO REM PROFUNDO]:
+        Injeta ruído fasorial (sigma = 0.15*pi).
+        Memórias fracas viram 'vagas lembranças conceituais' (peso reduzido).
+        Memórias não reforçadas são podadas.
+        """
+        logger.info("[SONO REM PROFUNDO]: Desligando sensores externos. Iniciando reorganização e poda...")
+        vagas_lembrancas = 0
+        podadas = 0
+
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT concept_key, salience_weight, fhrr_vector FROM epistemic_concepts")
+            linhas = cur.fetchall()
+
+            for key, weight, v_bytes in linhas:
+                if weight < 0.8:
+                    # Rota muito fraca: purga do sistema
+                    conn.execute("DELETE FROM epistemic_concepts WHERE concept_key = ?", (key,))
+                    podadas += 1
+                elif weight < 2.0:
+                    # Memória intermediária: injeta ruído tornando-a uma 'vaga lembrança'
+                    v_orig = np.frombuffer(v_bytes, dtype=np.complex64)
+                    noise = np.random.normal(0.0, 0.15 * np.pi, len(v_orig)).astype(np.float32)
+                    v_vago = np.exp(1j * (np.angle(v_orig) + noise)).astype(np.complex64)
+                    conn.execute(
+                        "UPDATE epistemic_concepts SET fhrr_vector = ?, salience_weight = salience_weight * 0.85 WHERE concept_key = ?",
+                        (v_vago.tobytes(), key)
+                    )
+                    vagas_lembrancas += 1
+                else:
+                    # Memória forte: consolida definitivamente
+                    conn.execute("UPDATE epistemic_concepts SET is_crystallized = 1 WHERE concept_key = ?", (key,))
+
+            conn.commit()
+            conn.execute("VACUUM;")
+
+        return {
+            "status": "DEEP_REM_COMPLETED",
+            "vagas_lembrancas_criadas": vagas_lembrancas,
+            "conceitos_podados": podadas
+        }

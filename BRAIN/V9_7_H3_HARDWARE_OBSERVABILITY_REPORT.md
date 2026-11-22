@@ -1,0 +1,15 @@
+# V9.7 H3 — observabilidade de hardware
+
+## GPU e fontes
+Win32_VideoController informou AMD Radeon RX 580 2048SP, PNPDeviceID PCI\VEN_1002&DEV_6FDF&SUBSYS_0B311002&REV_EF\4&FC7F53B&0&0018, driver 31.0.21925.1001 e AdapterRAM 4293918720 bytes reportados por WMI. AdapterRAM pode ser limitado/truncado e não é capacidade validada. Contadores de GPU listaram LUIDs 0x00000000:0x0000BA58 e 0x00000000:0x0000FA77, inclusive motores e memória local/compartilhada. Não foi estabelecida associação independente PnP↔LUID; nenhum contador foi atribuído à RX 580. VRAM total física, dedicada usada/livre, compartilhada, utilização, uso por processo de inferência e temperatura permanecem UNKNOWN. Não se somaram percentuais ou se inferiu uso da BRAINNET.
+
+## Alteração implementada
+Kernel mantém as últimas 32 referências de orçamentos encerrados em memória, sem prompts; snapshots preservam operações pendentes mesmo após retorno do comando, enquanto estiverem no buffer. A página Telemetria mostra quantidade recente e operações não confirmadas, sem transformar dados ausentes em zero. Os orçamentos continuam atualizáveis quando worker confirma fim. Um item pendente pode sair do buffer quando excedido o limite de 32; não é registro persistente nem reconciliação garantida. O ciclo continua sem modificar autorização ou iniciar/descarregar modelos. A GUI consome o coletor H2 existente.
+
+## Validação
+23 testes Python focados passaram em 1,65 s, incluindo pendência após retorno, coleta simulada e proteção de modelo ativo; log V9_7_H3_TESTS.log. Dois testes estáticos Node passaram, V9_7_H3_GUI_STATIC_TESTS.log: conferem importação lazy e presença do contrato, não renderização React nem entrega de snapshots. Build da GUI externa passou em 7,00 s, V9_7_H3_BUILD.log. Não houve teste de janela real ou conexão PyWebView real; coleta de GPU continua indisponível. Não foi executada regressão completa auditada.
+
+## Medições e pendências
+Uma amostra de 0,25 s indicou CPU total 9,3%, RAM disponível 8.849.158.144 bytes e RSS 20.381.696 bytes do processo Python de medição, não do Kernel; não foi comprovado repouso. A H2 mediu duas coletas de 281 e 235 ms em processo temporário; não é overhead em produção. Sampler H2 usa intervalo de 10 s, página consulta a cada 5 s e snapshot fica stale após 30 s. Não foram medidos CPU em repouso do Kernel, overhead sustentado, RAM real do processo Kernel, crescimento de buffers em carga, reconexão/entrega real da GUI, nem simulações novas de custo de troca e pressão de memória. A fila, duração real das tarefas, falhas verificadas, heartbeat independente e identidade/modelo ocupado permanecem incompletos. Sem LUID associado e medições confiáveis, nenhuma rotação deve ser ativada; recomendações do gerenciador permanecem conservadoras e experimentais.
+
+Arquivos alterados: BRAINNET.py, TelemetryDashboard.jsx, test_v97h3_recent_tasks.py, scripts/test-v97h3-observability.mjs. Checkpoint development_logs/checkpoints/v97h3; diffs V9_7_H3_*.diff. Nenhum serviço existente foi reiniciado ou encerrado.

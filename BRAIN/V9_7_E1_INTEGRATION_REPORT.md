@@ -1,0 +1,7 @@
+# V9.7-E1 — integração parcial
+
+O modo efetivo por comando agora limita também max_steps do UI-TARS (FAST 3, BALANCED 8, DEEP 12); AUTO usa a política anterior de comprimento. O contexto existente é isolado por ContextVar e é restaurado após o comando; autorização permanece no mecanismo existente. `max_steps` limita iterações, não comprova orçamento global, deadline ou consumo de inferência. Não foi demonstrada a propagação completa em todos os caminhos assíncronos.
+
+Pendências: contexto unificado por tarefa, contagem de custos, deadline total, planejamento em árvore, avaliação visual antes da atuação, reobservação, registro de previsão e resultado, recomendação de modelos no roteador, disponibilidade e fallback, e estados reais no Master Shell. A recomendação V9.7-C não tem gerenciador instanciado no Kernel. Não se comprova o critério de A/B/C no caminho completo. A GUI não foi alterada.
+
+Regressão auditada ampliada: 217 testes e 50 subtestes passaram em 6,08 s, exit 0, log development_logs/V9_7_E1_REGRESSION.log. Build GUI passou, log V9_7_E1_BUILD.log. Teste adicional de test_ui_tars_protocol.py: 50 passaram, 6 falharam, log V9_7_E1_TESTS_FINAL.log; falhas incluem ausência de autorização, expectativa keep_alive=0 versus 5m e mock sem _modo_coder_ativo. Não foi executada comparação com checkpoint para atribuir causalidade; permanecem não resolvidas. Nenhuma interface real ou atuação física foi testada. Checkpoint em development_logs/checkpoints/v97e1 e diff V9_7_E1_DIFF.log.

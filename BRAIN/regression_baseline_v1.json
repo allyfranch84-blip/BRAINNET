@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "created": "20261112_181553_829278",
+  "selection": [
+    "test_v98a2_7_motor_preparation.py",
+    "test_v98a2_1_safe_trajectory.py",
+    "test_v98a2_9_1_atomic.py",
+    "test_v98a2_9_pending.py",
+    "test_v98a2_8_motor_path.py",
+    "test_v909_foundation.py",
+    "test_v98a_capability_lab.py::test_natural_input_reaches_proposal_without_motor",
+    "test_v97r22_production.py",
+    "test_v97r23_budget.py",
+    "test_v97r24_coverage.py",
+    "test_inference_backend.py",
+    "test_v951_intent.py"
+  ],
+  "cases": {
+    "test_v98a2_7_motor_preparation.MotorPreparationTests::test_both_forms_remain_proposals": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_7_motor_preparation.MotorPreparationTests::test_linear_path_is_deterministic_and_inside": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_7_motor_preparation.MotorPreparationTests::test_negation_does_not_create_proposal": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_7_motor_preparation.MotorPreparationTests::test_path_leaving_region_is_rejected": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_desktop_unverified": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_endpoint_outside": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_intersection": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_missing_controls": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_missing_dpi": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_negative_coordinates": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_outside_region": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_1_safe_trajectory.SafeTrajectoryTests::test_safe_needs_authorization": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_9_1_atomic::test_simulated_transitions_are_single_use_and_verify": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_9_1_atomic::test_expired_cannot_authorize": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_9_1_atomic::test_approve_cancel_race_has_only_one_winner": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_9_pending::test_real_chat_retains_pending_task_and_operation": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_9_pending::test_pending_task_can_be_cancelled_once": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a2_8_motor_path::test_real_chat_binds_proposal_to_task_without_dispatch": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_capacity_and_concurrency": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_existing_contracts_reused": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_failed_inference_not_automatically_verified": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_planner_conservative": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_router_read_only_and_disabled": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_snapshot_expiry_and_isolation": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v909_foundation.FoundationTests::test_window_and_restart": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v98a_capability_lab::test_natural_input_reaches_proposal_without_motor": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r22_production::test_real_send_command_to_adapter_with_unique_task_id": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r22_production::test_backend_failure_is_explicit": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r22_production::test_timeout_is_reported_without_fabricated_answer": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r22_production::test_cancelled_after_transport_discards_result": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r22_production::test_parallel_commands_have_separate_ids": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r23_budget::test_reservation_and_unknown_remote_state": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r23_budget::test_cancel_blocks_next_reservation_without_claiming_finished": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r24_coverage::test_background_search_is_a_tool_without_tokens_or_gui": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r24_coverage::test_reported_tokens_are_reconciled_once": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v97r24_coverage::test_late_search_result_is_discarded_after_cancellation": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_404_unknown_endpoint_is_not_model_error": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_backend_selection_and_unsupported": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_cancel": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_chat_complete": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_complete_response": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_crash_and_controlled_recovery": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_existing_external_process_not_stopped": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_health_check": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_incomplete_stream": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_invalid_endpoint": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_kernel_not_imported_or_started_by_factory": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_missing_executable_is_configuration_error": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_model_unavailable": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_ollama_full_and_stream": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_streaming": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_timeout": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_unavailable": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestInferenceBackend::test_wrong_local_model_is_rejected": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_absent_gpu_counter_is_unknown": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_artifacts_checked_separately": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_missing_model_has_specific_error": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_port_occupied_does_not_start_or_kill": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_ports_and_ollama_executable_forbidden": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_repeated_crashes_degraded_with_history": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_requested_shutdown_recorded": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_transient_failure_waits_then_recovers": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_unexpected_exit_recorded_as_process_failed": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_inference_backend.TestSupervisorAddendum::test_vulkan_startup_exit_is_recorded": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_open_contract_and_tom[abra o paint-Paint]": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_open_contract_and_tom[abre o paint-Paint]": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_open_contract_and_tom[inicie o Paint-Paint]": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_open_contract_and_tom[abra o bloco de notas-Notepad]": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_negation_question_compound_and_door": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_uniform_distribution_still_uses_structured_evidence": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    },
+    "test_v951_intent::test_simulated_end_to_end_intent_plan_authorization_verification": {
+      "status": "passed",
+      "failure_signature": null,
+      "message": ""
+    }
+  },
+  "historical_visual_source": "V9_7_E1_R1_REPORT.md"
+}

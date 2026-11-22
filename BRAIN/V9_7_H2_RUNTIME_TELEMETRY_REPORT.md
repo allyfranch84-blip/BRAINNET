@@ -1,0 +1,17 @@
+# V9.7-H2 — telemetria de execução
+
+## Causa e fluxo
+Os widgets legados consultam métodos ausentes de BrainnetBridge. O caminho adicional usa operations_status.RuntimeTelemetrySampler → BrainnetKernel.start (worker em background) → BrainnetBridge.get_runtime_telemetry (snapshot em memória) → useKernelTelemetry → TelemetryDashboard. Não inicia modelos ou serviços. Coleta a cada 10 s, polling da página a cada 5 s, sem histórico persistente. Timestamp e stale após 30 s são indicados. Exceções de coleta não encerram Kernel; Ollama offline retorna indisponível.
+
+## Fontes e dados
+psutil fornece CPU total, CPU do processo (primeira amostra indisponível), RAM total/usada/disponível, RSS do processo e RSS de processos Ollama/llama-server identificados por nome. Ollama usa OLLAMA_PS_URL configurada (/api/ps) e informa nome, tamanho, size_vram, expires_at e latência HTTP, quando presentes. Isso não comprova requisições por modelo ou VRAM livre. Kernel expõe is_running e snapshots das tarefas durante send_command; campos existentes incluem modo, identificador, tokens e operações. A fila comum não está disponível. Tarefas são removidas do registro ao fim de send_command, portanto operações remotas ainda pendentes após retorno não ficam acessíveis nesse registro; evento final anterior pode apresentar snapshot estático. Não existe heartbeat independente do coletor: timestamp indica amostragem, não prova que todos subsistemas funcionam.
+
+Não há GPU/VRAM/temperatura sintética: mostrados como indisponíveis. Windows lista contadores GPU Engine, GPU Adapter Memory, GPU Process Memory, GPU Local Adapter Memory e GPU Non Local Adapter Memory, mas não foi validada associação de instâncias ao dispositivo AMD nem amostragem por processo; não usados para valores. Fila, estado do gerenciador de residência, controlador adaptativo, planejador, última falha verificada e modelos ocupados não foram integrados. Modelo selecionado e inferências aparecem apenas quando o caminho da tarefa efetivamente os registra.
+
+## Medição real somente leitura
+Duas coletas isoladas executadas em processo Python temporário, incluindo enumeração de processos e consulta local, levaram 281 ms e 235 ms em parede. Não medem CPU sustentada nem overhead do Kernel em produção. Na segunda leitura: CPU total 4,2%; RAM total 17.079.750.656 bytes, disponível 8.104.583.168 bytes; CPU/RSS do processo eram do Python temporário de teste, não do Kernel em execução. Ollama configurado em 127.0.0.1:11435 respondeu /api/ps em 16 ms, com lista vazia naquele instante. Nenhum processo foi reiniciado ou encerrado.
+
+## Testes e limites
+20 testes focados passaram, incluindo psutil de leitura e Ollama simulado offline; regressão auditada final 238 testes e 50 subtestes passaram em 7,07 s; log development_logs/V9_7_H2_REGRESSION_FINAL2.log. A primeira regressão apresentou 2 falhas por ponte construída sem Kernel; corrigido com getattr e repetido. Build do projeto React externo passou, V9_7_H2_BUILD.log. Não houve teste DOM ou validação do caminho PyWebView em execução real; o processo aberto precisa carregar esta versão mediante reinicialização supervisionada autorizada. Não foi medido overhead da aplicação real, fonte GPU, reconexão real, buffer sob falhas prolongadas ou estados reais de duas tarefas concorrentes. Nenhuma GUI, modelo pesado ou atuador foi iniciado.
+
+Arquivos alterados: operations_status.py, BRAINNET.py, TelemetryDashboard.jsx; teste test_v97h2_telemetry.py. Checkpoint development_logs/checkpoints/v97h2 e diffs V9_7_H2_*.diff.

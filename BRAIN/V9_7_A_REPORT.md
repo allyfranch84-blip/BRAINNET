@@ -1,0 +1,7 @@
+# V9.7-A — implementação parcial
+
+Escrita confirmada no backend e diretório do componente. Alterados BRAINNET.py, MasterShell_(1).jsx e test_v97a_effort.py; checkpoints e diffs em development_logs. FAST/BALANCED/DEEP/AUTO persistem em brainnet_config.json. AUTO usa comprimento do texto; opções num_predict, num_ctx e timeout são aplicadas às chamadas conversacionais diretas. O seletor consulta e grava a preferência pela ponte pywebview; o resultado do comando informa orçamento e modo efetivo. A autorização não foi modificada. Não se envia configuração de thinking nativo sem confirmação de suporte.
+
+Limitações: orçamento não está integrado ao roteador, planejador, demais geradores, visual ou backend alternativo; não há limitação de alternativas, tentativas e inferências totais. O modo não se adapta a risco ou recursos reais. Estado exibido limita-se a aguardando/processando; modelo efetivamente selecionado e disponibilidade não foram medidos. Conexão GUI com Kernel real não foi testada; mock informa indisponibilidade. Sem estas integrações, o critério da missão não está atendido.
+
+Build: npm run build, exit 0, log V9_7_A_BUILD.log. Regressão auditada: 212 testes e 50 subtestes aprovados em 5,51 s, exit 0, V9_7_A_REGRESSION.log. Testes de preferência são simulados; não provam comportamento de serviço real ou conexão GUI. A primeira tentativa dos testes apresentou 1 falha por mock compartilhando dicionário mutável; corrigida para retornar nova cópia. Não foram acionados modelos ou atuadores reais.

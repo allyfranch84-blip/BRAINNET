@@ -1,0 +1,22 @@
+# V9.1.1 — relatório de integração
+
+## Estado de validação
+
+Nenhum pytest, unittest, tox, nox, script de teste, coleta de testes, serviço, modelo, navegador ou atuação foi executado. Apenas `ast.parse` foi executado sobre seis arquivos Python alterados/criados; todos passaram sintaxe. Isso não valida importação, comportamento ou integração. Testes preparados em `test_v911_prepared.py` não foram executados nem incluídos na allowlist manual.
+
+## Ordens
+
+1. **Arqueologia — parcial.** `browser_bridge.py` contém extrator HTML/XML de legendas sem chamador localizado; não usa yt-dlp. Não há evidência de remoção histórica; ver `V9_YTDLP_RECOVERY_REPORT.md`. Nenhum componente antigo foi restaurado e nenhum adaptador com acesso externo foi acionado ou criado.
+2. **FHRR/Kernel — parcial, não validado em execução.** `BRAINNET_SITUATION_FHRR=1` cria a memória situacional e o índice com o motor `self.vsa` existente; a ausência da flag mantém ambos desativados. O fluxo comum de `send_command` registra início, falha e finalização como não verificados, com ID, origem e validade; isso não representa confirmação de objetivo nem concede autorização. O lock cobre essas gravações via Kernel. Não foram conectados eventos de janela, mudança, proposta, resultado, confirmação ou cancelamento distintos, nem recuperação no fluxo do Kernel. Comandos que retornam antes do fluxo comum não registram esses eventos. Não há testes de integração executados; o índice externo não tem lock próprio.
+3. **GHRR — parcial, não integrado.** `SyntacticPDAG.route_key` cria chave v1 com hash de intenção completa e contexto; `propose_route` devolve passos legados como `REVIEW_REQUIRED`, com autorização falsa e verificação histórica desconhecida. Não migra chaves, não treina nem executa. Não está ligado ao planejador ou Kernel e não valida contexto, janela, alvo ou pré-condições; o caminho legado de execução permanece inalterado.
+4. **QFHRR/H-Mem — parcial.** `pack_masked_v2` e `unpack_masked_v2` guardam cabeçalho, dimensão, Z8 e máscara independente, preservando leitura e operações antigas. Dados legados com zero são ambíguos e não são convertidos automaticamente. `preserve_episodes_to_schema` grava referências dos episódios sem excluí-los, usando tabela existente; não foi conectado à consolidação automática. `compress_episodes_to_schema` legado continua existindo e apaga episódios quando chamado: nenhuma migração foi feita, portanto ainda não se pode afirmar que toda consolidação preserva dados. Orçamentos conjuntos, pressão de RAM e cache GHRR/QFHRR permanecem pendentes.
+5. **Capacidades naturais — parcial.** `mostre seus comandos` e `mostra seus comandos` reutilizam o handler existente `/help` por alias exato; não se montam comandos a partir de texto livre. Livro, vídeo e auditoria read-only não foram conectados; protótipos existentes permanecem isolados. Nenhuma ação privilegiada é autorizada por similaridade.
+6. **Portabilidade — parcial.** `portable_planner.discover_local` resolve raiz relativa e inventaria CPU/RAM/disco, ferramentas no PATH e GGUF em diretórios locais, sem iniciar serviços; GPU/Vulkan e funcionamento de modelos ficam UNKNOWN/NOT_TESTED. Kernel livre de pesos opcionais, sugestão de modelos e migração de caminhos absolutos não foram comprovados. `development_logs/approved_test_paths.txt` contém somente dois arquivos anteriormente auditados; não havia `conftest.py` em BRAIN, A:\BRAINNET ou raiz A: na inspeção. `RUN_TESTS_MANUAL.ps1` valida caminhos, verifica processos conhecidos e recusa execução se CIM falhar; desativa carregamento automático de plugins e grava log e código de saída. Não foi executado nem validado. Verificação de processos é uma fotografia e não evita uma inicialização concorrente posterior.
+
+## Arquivos
+
+Modificados: `BRAINNET.py`, `qfhrr_core.py`, `hmem_engine.py`, `pdag_ghrr_extension.py`, `portable_planner.py`, `V9_IMPLEMENTATION_REPORT.md`. Criados: `test_v911_prepared.py`, `RUN_TESTS_MANUAL.ps1`, `development_logs/approved_test_paths.txt`, `V9_YTDLP_RECOVERY_REPORT.md` e este relatório. Não houve alterações em bancos nem em `self_inspector.py`.
+
+## Próximos passos
+
+Executar manualmente os testes aprovados conforme decisão do usuário; auditar e validar os testes novos antes de adicioná-los à allowlist; completar hooks de ciclo de vida e revalidação de contexto; planejar migração GHRR e consolidação H-Mem sem exclusão; implementar adaptador de vídeo com consentimento e limites. Somente após validação de integração considerar ativar a flag experimental.

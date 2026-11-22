@@ -1,0 +1,70 @@
+--- before/BRAINNET.py
++++ after/BRAINNET.py
+@@ -1080,18 +1080,6 @@
+         # 9. DISPARO MOTOR AUTORIZADO: COLAPSO DE PROBABILIDADE E ENERGIA LIVRE
+         # Toda ordem operacional flui sem interferência de regras rígidas
+         # ----------------------------------------------------------------------
+-        if julgamento.gate != MotorGateState.GO:
+-            prefixo_estatico = "SISTEMA: Você é a BRAINNET v7. Responda de forma compreensiva e prestativa.\n"
+-            prompt_chat = f"{prefixo_estatico}OPERADOR: {prompt_raw}\nRESPOSTA:"
+-            try:
+-                req = urllib.request.Request("http://localhost:11434/api/generate", data=json.dumps({"model": "qwen2.5:1.5b", "prompt": prompt_chat, "stream": False, "options": {"temperature": 0.5, "num_predict": 200}}).encode("utf-8"), headers={"Content-Type": "application/json"})
+-                with urllib.request.urlopen(req, timeout=15) as resp:
+-                    resp_txt = json.loads(resp.read().decode("utf-8")).get("response", "").strip()
+-            except Exception:
+-                resp_txt = "Compreendi o que você disse. Se precisar que eu execute algo no sistema ou pesquise na web, me avise!"
+-
+-            self._falar_seguro(resp_txt)
+-            return {"reply": resp_txt, "logs": []}
+ 
+         # DISPARO MOTOR AUTORIZADO (GATE == GO) COM VERIFICAÇÃO FACTUAL
+         confianca_alegada = 0.70
+--- before/theory_of_mind.py
++++ after/theory_of_mind.py
+@@ -182,46 +182,10 @@
+             
+ 
+         # 4. AMBIGUIDADE CRÍTICA
+-        if p_low in ("abra o video", "abra o vídeo", "pesquise isso", "clique lá", "veja aquilo"):
+-            return MentalizingJudgment(
+-                gate=MotorGateState.CLARIFICATION,
+-                intended_goal=text,
+-                underlying_meaning="Ordem ambígua sem elemento alvo definido.",
+-                is_physical_world=False,
+-                requires_social_dialogue=True,
+-                confidence_evidence=0.3,
+-                explanation_to_user="Você pediu para interagir, mas não especificou qual elemento ou título deseja acessar. Me informe o nome ou link."
+-            )
+ 
+         # 5. DESINIBIÇÃO MOTORA COGNITIVA (GÂNGLIOS DA BASE LIVRES DE REGEX ENGESSADO)
+         # Se for uma pergunta explicativa pura ou conversa reflexiva, mantém No-Go conversacional
+-        padroes_conversa_pura = (
+-            "o que é", "o que e", "o que significa", "como funciona", "quem foi",
+-            "qual a diferença", "me explique", "por que o", "por que a", "conte uma"
+-        )
+-        eh_pergunta_teorica = any(p_low.startswith(pfx) for pfx in padroes_conversa_pura) or (
+-            p_low.endswith("?") and not any(k in p_low for k in ["whatsapp", "zap", "code", "terminal", "bloco", "pesquis", "busqu", "mande", "envie", "abra"])
+-        )
+ 
+-        if eh_pergunta_teorica:
+-            return MentalizingJudgment(
+-                gate=MotorGateState.NO_GO,
+-                intended_goal=text,
+-                underlying_meaning="Dúvida teórica ou diálogo conceitual puro. Via motora preservada em repouso.",
+-                is_physical_world=False,
+-                requires_social_dialogue=True,
+-                confidence_evidence=0.40,
+-                explanation_to_user="Canal conversacional."
+-            )
+ 
+         # Qualquer ordem operativa, jargão (ex: 'whatssapmensage'), menção a software ou instrução
+         # recebe desinibição Go para que o Córtex Causal processe a Meta-Primitiva
+-        return MentalizingJudgment(
+-            gate=MotorGateState.GO,
+-            intended_goal=text,
+-            underlying_meaning="Intenção pragmática/operacional detectada. Desinibição motora total autorizada.",
+-            is_physical_world=False,
+-            requires_social_dialogue=False,
+-            confidence_evidence=0.95,
+-            explanation_to_user="Desinibição motora autorizada para planejamento causal."
+-        )

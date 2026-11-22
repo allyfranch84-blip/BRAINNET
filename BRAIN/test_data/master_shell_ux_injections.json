@@ -1,0 +1,313 @@
+[
+  {
+    "old": "import SemanticTrainer from \"./SemanticTrainer\";\n",
+    "new": "import SemanticTrainer from \"./SemanticTrainer\";\nimport VoiceToast from \"./VoiceToast\";\nimport { useChatInputFocus, CopyButton, MessageActions, SearchButton } from \"./ChatActions\";\n"
+  },
+  {
+    "old": "function Omnibar({ messages, pending, onSend, voice }) {\n  const [text, setText] = useState(\"\");",
+    "new": "function Omnibar({ messages, pending, onSend, voice }) {\n  const [text, setText] = useState(\"\");\n  const inputRef = useChatInputFocus(messages, pending);"
+  },
+  {
+    "old": "function ChatPanel({ messages, pending, onSend }) {\n  const [text, setText] = useState(\"\");",
+    "new": "function ChatPanel({ messages, pending, onSend }) {\n  const [text, setText] = useState(\"\");\n  const inputRef = useChatInputFocus(messages, pending);"
+  },
+  {
+    "old": "<input value={text} onChange={(e) => setText(e.target.value)} placeholder=\"Peça algo ao AI OS… ou use /comando\"",
+    "new": "<input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder=\"Peça algo ao AI OS… ou use /comando\""
+  },
+  {
+    "old": "<input value={text} onChange={(e) => setText(e.target.value)} placeholder=\"Digite uma mensagem ou /comando…\"",
+    "new": "<input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder=\"Digite uma mensagem ou /comando…\""
+  },
+  {
+    "old": "              {m.text}\n            </motion.div>",
+    "new": "              {m.text}\n              {m.role === \"ai\" && <MessageActions text={m.text} onSend={onSend} pending={pending} />}\n            </motion.div>"
+  },
+  {
+    "old": "<div className=\"mb-3\"><Kinetic text=\"Conversa\" size=\"clamp(34px,4.2vw,64px)\" weight={250} /></div>",
+    "new": "<div className=\"mb-3\"><Kinetic text=\"Conversa\" size=\"clamp(34px,4.2vw,64px)\" weight={250} /></div>\n      <div className=\"mb-3\"><CopyButton text={messages.map((m) => `${m.role === \"ai\" ? \"BRAINNET\" : \"Você\"}: ${m.text}`).join(\"\\n\\n\")} label=\"Copiar Histórico\" /></div>"
+  },
+  {
+    "old": "        <motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.08 }}",
+    "new": "        <SearchButton text={text} onSend={onSend} clear={() => setText(\"\")} pending={pending} />\n        <motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.08 }}"
+  },
+  {
+    "old": "        <motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.1 }}",
+    "new": "        <SearchButton text={text} onSend={onSend} clear={() => setText(\"\")} pending={pending} />\n        <motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.1 }}"
+  },
+  {
+    "old": "  const match = (s) => `${s.name} ${s.description || \"\"}`.toLowerCase().includes(query);",
+    "new": "  const match = (s) => s.id !== \"web_search\" && `${s.name} ${s.description || \"\"}`.toLowerCase().includes(query);"
+  },
+  {
+    "old": "        <SectionLabel expanded={expanded}>HABILIDADES</SectionLabel>",
+    "new": "        <MenuItem icon=\"brain\" label=\"Telemetria\" hint=\"painéis do sistema\" expanded={expanded} onClick={() => document.getElementById(\"brainnet-telemetry\")?.scrollIntoView({ behavior: \"smooth\", block: \"end\" })} />\n        <SectionLabel expanded={expanded}>HABILIDADES</SectionLabel>"
+  },
+  {
+    "old": "<div className=\"flex shrink-0 flex-wrap items-center gap-3\" aria-label=\"Painéis de telemetria\">",
+    "new": "<div id=\"brainnet-telemetry\" className=\"flex shrink-0 flex-wrap items-center gap-3\" aria-label=\"Painéis de telemetria\">"
+  },
+  {
+    "old": "      {widgetMode && (\n        <WidgetPopup",
+    "new": "      <VoiceToast />\n      {widgetMode && (\n        <WidgetPopup"
+  },
+  {
+    "old": "import VoiceToast from \"./VoiceToast\";\n",
+    "new": "import VoiceToast from \"./VoiceToast\";\nimport GlobalStop from \"./GlobalStop\";\n",
+    "count": 1
+  },
+  {
+    "old": "  const inputRef = useChatInputFocus(messages, pending);",
+    "new": "  const inputRef = useChatInputFocus(messages, pending);\n  const [isSearchMode, setIsSearchMode] = useState(false);",
+    "count": 2
+  },
+  {
+    "old": "  const submit = (e) => { e.preventDefault(); const v = text.trim(); if (!v) return; onSend(v); setText(\"\"); };",
+    "new": "  const submit = (e) => { e.preventDefault(); const v = text.trim(); if (!v) return; onSend(isSearchMode && !v.startsWith(\"/\") ? `/pesquise ${v}` : v); setText(\"\"); };",
+    "count": 2
+  },
+  {
+    "old": "placeholder=\"Peça algo ao AI OS… ou use /comando\"",
+    "new": "placeholder={isSearchMode ? \"🔍 O que você quer pesquisar?\" : \"Peça algo ao AI OS… ou use /comando\"}",
+    "count": 1
+  },
+  {
+    "old": "placeholder=\"Digite uma mensagem ou /comando…\"",
+    "new": "placeholder={isSearchMode ? \"🔍 O que você quer pesquisar?\" : \"Digite uma mensagem ou /comando…\"}",
+    "count": 1
+  },
+  {
+    "old": "<SearchButton text={text} onSend={onSend} clear={() => setText(\"\")} pending={pending} />",
+    "new": "<SearchButton isSearchMode={isSearchMode} toggle={() => { setIsSearchMode((value) => !value); inputRef.current?.focus({ preventScroll: true }); }} pending={pending} />",
+    "count": 2
+  },
+  {
+    "old": "      <VoiceToast />",
+    "new": "      <VoiceToast />\n      <GlobalStop />",
+    "count": 1
+  },
+  {
+    "old": "import GlobalStop from \"./GlobalStop\";",
+    "new": "import SendStopButton from \"./SendStopButton\";",
+    "count": 1
+  },
+  {
+    "old": "      <VoiceToast />\n      <GlobalStop />\n",
+    "new": "      <VoiceToast />\n",
+    "count": 1
+  },
+  {
+    "old": "function Omnibar({ messages, pending, onSend, voice }) {",
+    "new": "function Omnibar({ messages, pending, onSend, voice }) {\n  const { stopExecution, isStopping } = useContext(ShellFxCtx);",
+    "count": 1
+  },
+  {
+    "old": "function ChatPanel({ messages, pending, onSend }) {",
+    "new": "function ChatPanel({ messages, pending, onSend }) {\n  const { stopExecution, isStopping } = useContext(ShellFxCtx);",
+    "count": 1
+  },
+  {
+    "old": "function WidgetPopup({ kernel, theme, voice, onSend, pending, messages, pushLog }) {",
+    "new": "function WidgetPopup({ kernel, theme, voice, onSend, pending, messages, pushLog }) {\n  const { stopExecution, isStopping } = useContext(ShellFxCtx);",
+    "count": 1
+  },
+  {
+    "old": "  const [pending, setPending] = useState(false);",
+    "new": "  const [isProcessing, setIsProcessing] = useState(false);\n  const [isStopping, setIsStopping] = useState(false);\n  const pending = isProcessing || isStopping;\n  const executionRef = useRef({ id: 0, processing: false, stopping: false });",
+    "count": 1
+  },
+  {
+    "old": "  const sendCommand = useCallback(async (text) => {\n    pushMessage({ role: \"user\", text });\n    setPending(true);\n    const res = await kernel.call(\"send_command\", text);\n    setPending(false);\n    if (res?.error) {\n      pushLog({ level: \"ERROR\", core: \"Shell\", msg: res.error });\n      pushMessage({ role: \"ai\", text: \"Falha ao falar com o Kernel. Veja o log.\" });\n      return;\n    }\n    if (res?.reply) pushMessage({ role: \"ai\", text: res.reply });\n    res?.logs?.forEach(pushLog);\n    const incoming = extractSchema(res);\n    if (incoming) {\n      setDynamicSchema(incoming);\n      setView(\"schema\");\n    }\n  }, [kernel.call, pushLog, pushMessage]);",
+    "new": "  const sendCommand = useCallback(async (text) => {\n    if (executionRef.current.processing || executionRef.current.stopping) return;\n    const request = ++executionRef.current.id;\n    executionRef.current.processing = true;\n    pushMessage({ role: \"user\", text });\n    setIsProcessing(true);\n    try {\n      const res = await kernel.call(\"send_command\", text);\n      if (request !== executionRef.current.id || executionRef.current.stopping) return;\n      if (res?.error) {\n        pushLog({ level: \"ERROR\", core: \"Shell\", msg: res.error });\n        pushMessage({ role: \"ai\", text: \"Falha ao falar com o Kernel. Veja o log.\" });\n        return;\n      }\n      if (res?.reply) pushMessage({ role: \"ai\", text: res.reply });\n      res?.logs?.forEach(pushLog);\n      const incoming = extractSchema(res);\n      if (incoming) { setDynamicSchema(incoming); setView(\"schema\"); }\n    } catch (error) {\n      if (request === executionRef.current.id && !executionRef.current.stopping) {\n        pushLog({ level: \"ERROR\", core: \"Shell\", msg: error?.message || String(error) });\n        pushMessage({ role: \"ai\", text: \"Falha ao falar com o Kernel. Veja o log.\" });\n      }\n    } finally {\n      if (request === executionRef.current.id) {\n        executionRef.current.processing = false;\n        setIsProcessing(false);\n      }\n    }\n  }, [kernel.call, pushLog, pushMessage]);\n\n  const stopExecution = useCallback(async () => {\n    if (executionRef.current.stopping) return;\n    executionRef.current.stopping = true;\n    setIsStopping(true);\n    try {\n      const api = window.pywebview?.api;\n      if (typeof api?.stop_execution !== \"function\") throw new Error(\"Kernel desconectado\");\n      const result = await api.stop_execution();\n      if (result?.ok !== true) throw new Error(result?.errors?.join(\"; \") || \"Parada não confirmada\");\n      ++executionRef.current.id;\n      executionRef.current.processing = false;\n      setIsProcessing(false);\n      setVoiceOn(false);\n      pushMessage({ role: \"ai\", text: \"Execução e áudio interrompidos.\" });\n    } catch (error) {\n      pushLog({ level: \"ERROR\", core: \"Stop\", msg: error?.message || String(error) });\n      pushMessage({ role: \"ai\", text: `Não foi possível confirmar a parada: ${error?.message || error}` });\n    } finally {\n      executionRef.current.stopping = false;\n      setIsStopping(false);\n    }\n  }, [pushLog, pushMessage]);",
+    "count": 1
+  },
+  {
+    "old": "<ShellFxCtx.Provider value={{ lite: widgetMode }}>",
+    "new": "<ShellFxCtx.Provider value={{ lite: widgetMode, stopExecution, isStopping }}>",
+    "count": 1
+  },
+  {
+    "old": "<motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.1 }} whileTap={{ scaleX: 0.86, scaleY: 0.8 }} transition={JELLY}\n          className=\"grid h-11 w-11 place-items-center rounded-full text-[#10101a]\" style={{ background: IRIS, boxShadow: text ? \"0 0 22px var(--glow)\" : \"none\" }}>\n          <Icon name=\"send\" className=\"h-5 w-5\" />\n        </motion.button>",
+    "new": "<SendStopButton processing={pending} stopping={isStopping} onStop={stopExecution} whileHover={{ scale: 1.1 }} whileTap={{ scaleX: 0.86, scaleY: 0.8 }} transition={JELLY}\n          className=\"grid h-11 w-11 place-items-center rounded-full text-[#10101a]\" style={{ background: IRIS, boxShadow: text ? \"0 0 22px var(--glow)\" : \"none\" }}>\n          <Icon name=\"send\" className=\"h-5 w-5\" />\n        </SendStopButton>",
+    "count": 1
+  },
+  {
+    "old": "<motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.08 }} whileTap={{ scaleX: 0.86, scaleY: 0.8 }} transition={JELLY}\n          className=\"grid h-10 w-10 place-items-center rounded-full\" style={{ color: \"var(--violet)\", background: \"var(--chip)\", boxShadow: text ? \"0 0 18px var(--glow)\" : \"none\" }}>\n          <Icon name=\"send\" className=\"h-5 w-5\" />\n        </motion.button>",
+    "new": "<SendStopButton processing={pending} stopping={isStopping} onStop={stopExecution} whileHover={{ scale: 1.08 }} whileTap={{ scaleX: 0.86, scaleY: 0.8 }} transition={JELLY}\n          className=\"grid h-10 w-10 place-items-center rounded-full\" style={{ color: \"var(--violet)\", background: \"var(--chip)\", boxShadow: text ? \"0 0 18px var(--glow)\" : \"none\" }}>\n          <Icon name=\"send\" className=\"h-5 w-5\" />\n        </SendStopButton>",
+    "count": 1
+  },
+  {
+    "old": "<motion.button type=\"submit\" aria-label=\"Enviar\" whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.8 }} transition={JELLY}\n                        className=\"grid h-8 w-8 place-items-center rounded-full text-[#10101a]\" style={{ background: IRIS, boxShadow: text ? \"0 0 14px var(--glow)\" : \"none\" }}>\n                        <Icon name=\"send\" className=\"h-4 w-4\" />\n                      </motion.button>",
+    "new": "<SendStopButton processing={pending} stopping={isStopping} onStop={stopExecution} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.8 }} transition={JELLY}\n                        className=\"grid h-8 w-8 place-items-center rounded-full text-[#10101a]\" style={{ background: IRIS, boxShadow: text ? \"0 0 14px var(--glow)\" : \"none\" }}>\n                        <Icon name=\"send\" className=\"h-4 w-4\" />\n                      </SendStopButton>",
+    "count": 1
+  },
+  {
+    "old": "const submit = (e) => { e.preventDefault(); const v = text.trim();",
+    "new": "const submit = (e) => { e.preventDefault(); if (pending) return; const v = text.trim();",
+    "count": 2
+  },
+  {
+    "old": "  const submit = (e) => {\n    e.preventDefault();\n    const v = text.trim();",
+    "new": "  const submit = (e) => {\n    e.preventDefault();\n    if (pending) return;\n    const v = text.trim();",
+    "count": 1
+  },
+  {
+    "old": "import WorldModelWidget from \"./WorldModelWidget\";",
+    "new": "import WorldModelWidget from \"./WorldModelWidget\";\nimport TelemetryDashboard from \"./TelemetryDashboard\";"
+  },
+  {
+    "old": "<MenuItem icon=\"brain\" label=\"Telemetria\" hint=\"painéis do sistema\" expanded={expanded} onClick={() => document.getElementById(\"brainnet-telemetry\")?.scrollIntoView({ behavior: \"smooth\", block: \"end\" })} />",
+    "new": "<MenuItem icon=\"brain\" label=\"Telemetria\" hint=\"painéis do sistema\" active={view === \"telemetry\"} expanded={expanded} onClick={() => onNavigate(\"telemetry\")} />"
+  },
+  {
+    "old": "semantic: \"Rede Semântica\", schema: \"Painel\"",
+    "new": "semantic: \"Rede Semântica\", telemetry: \"Telemetria\", schema: \"Painel\""
+  },
+  {
+    "old": "view === \"semantic\" || view === \"schema\"",
+    "new": "view === \"semantic\" || view === \"telemetry\" || view === \"schema\""
+  },
+  {
+    "old": "                ) : v === \"semantic\" ? (\n                  <motion.div key=\"semantic\"",
+    "new": "                ) : v === \"telemetry\" ? (\n                  <motion.div key=\"telemetry\" className=\"h-full min-h-0 min-w-0 flex-1\" {...PAGE}><TelemetryDashboard /></motion.div>\n                ) : v === \"semantic\" ? (\n                  <motion.div key=\"semantic\""
+  },
+  {
+    "old": "{!widgetMode && (\n              <div id=\"brainnet-telemetry\"",
+    "new": "{!widgetMode && v !== \"telemetry\" && (\n              <div id=\"brainnet-telemetry\""
+  },
+  {
+    "old": "  // Consulta o disco via Python ESTRITAMENTE 1 VEZ ao abrir (array [])\n  useEffect(() => {\n    let alive = true;\n    (async () => {\n      try {\n        const saved = await kernel.call(\"get_theme\");\n        if (alive && saved && (saved === \"dark\" || saved === \"light\")) {\n          setTheme(saved);\n          document.documentElement.setAttribute(\"data-theme\", saved);\n        }\n      } catch (e) { /* fallback local */ }\n    })();\n    return () => { alive = false; };\n  }, []); // ARRAY VAZIO: Garante que NUNCA roda de novo ao clicar no botao!",
+    "new": "  // Consulta o tema quando a ponte estiver pronta; não repete ao clicar.\n  useEffect(() => {\n    let alive = true, loaded = false;\n    const loadTheme = async () => {\n      const api = window.pywebview?.api;\n      if (loaded || typeof api?.get_theme !== \"function\") return;\n      loaded = true;\n      try {\n        const saved = await api.get_theme();\n        if (alive && (saved === \"dark\" || saved === \"light\")) {\n          setTheme(saved);\n          document.documentElement.setAttribute(\"data-theme\", saved);\n        }\n      } catch (error) { console.warn(\"[kernel] Tema local mantido\", error); }\n    };\n    window.addEventListener(\"pywebviewready\", loadTheme);\n    loadTheme();\n    return () => { alive = false; window.removeEventListener(\"pywebviewready\", loadTheme); };\n  }, []);"
+  },
+  {
+    "old": "      <div data-theme={theme} className=\"relative isolate h-screen w-screen select-none overflow-hidden font-sans antialiased\"",
+    "new": "      {!widgetMode && (\n      <div data-theme={theme} className=\"relative isolate h-screen w-screen select-none overflow-hidden font-sans antialiased\""
+  },
+  {
+    "old": "          </main>\n        </div>\n      </div>\n\n      <VoiceToast />",
+    "new": "          </main>\n        </div>\n      </div>\n      )}\n\n      <VoiceToast />"
+  },
+  {
+    "old": "function WidgetPopup({ kernel, theme, voice, onSend, pending, messages, pushLog }) {",
+    "new": "function WidgetPopup({ kernel, theme, voice, onSend, pending, messages, pushLog, onClose }) {"
+  },
+  {
+    "old": "              <Icon name=\"ai\" className=\"relative h-8 w-8\" style={{ color: \"var(--cyan)\", filter: \"drop-shadow(0 0 8px var(--cyan))\" }} />",
+    "new": "              <button\n                type=\"button\"\n                aria-label=\"Sair do modo widget\"\n                onClick={(event) => { event.stopPropagation(); onClose?.(); }}\n                onPointerDown={(event) => event.stopPropagation()}\n                className=\"absolute -right-1 -top-1 z-20 grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold\"\n                style={{ background: \"var(--err)\", color: \"#fff\", boxShadow: \"0 0 8px var(--err)\" }}\n              >×</button>\n              <Icon name=\"mic\" className=\"relative h-8 w-8\" style={{ color: \"var(--cyan)\", filter: \"drop-shadow(0 0 8px var(--cyan))\" }} />"
+  },
+  {
+    "old": "        <WidgetPopup kernel={kernel} theme={theme} voice={voice} onSend={sendCommand} pending={pending} messages={messages} pushLog={pushLog} />",
+    "new": "        <WidgetPopup kernel={kernel} theme={theme} voice={voice} onSend={sendCommand} pending={pending} messages={messages} pushLog={pushLog} onClose={toggleWidget} />"
+  },
+  {
+    "old": "import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from \"react\";\nimport WorldModelWidget from \"./WorldModelWidget\";\nimport TelemetryDashboard from \"./TelemetryDashboard\";\nimport MetacognitionGauge from \"./MetacognitionGauge\";\nimport SemanticTrainer from \"./SemanticTrainer\";\nimport VoiceToast from \"./VoiceToast\";\n",
+    "new": "import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from \"react\";\nimport WorldModelWidget from \"./WorldModelWidget\";\nimport TelemetryDashboard from \"./TelemetryDashboard\";\nimport Hotbar from \"./Hotbar\";\nimport MetacognitionGauge from \"./MetacognitionGauge\";\nimport SemanticTrainer from \"./SemanticTrainer\";\nimport VoiceToast from \"./VoiceToast\";\n"
+  },
+  {
+    "old": "  );\n}\n\nfunction Header({ theme, onToggleTheme, bridge, title, trail, voiceOn, fullscreen, onToggleFullscreen, widgetMode, onToggleWidget }) {\n  const reduce = useReducedMotion();\n  return (\n    <Bubble morph=\"a\" delay={9} initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={SPRING} className=\"!rounded-full\" style={{ animation: \"none\" }} inner=\"flex items-center justify-between gap-4 py-2.5 pl-6 pr-3\">\n",
+    "new": "  );\n}\n\nfunction Header({ kernel, theme, onToggleTheme, bridge, title, trail, voiceOn, fullscreen, onToggleFullscreen, widgetMode, onToggleWidget }) {\n  const reduce = useReducedMotion();\n  return (\n    <Bubble morph=\"a\" delay={9} initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={SPRING} className=\"!rounded-full\" style={{ animation: \"none\" }} inner=\"flex items-center justify-between gap-4 py-2.5 pl-6 pr-3\">\n"
+  },
+  {
+    "old": "        </AnimatePresence>\n      </div>\n      <div className=\"flex shrink-0 items-center gap-2\">\n        <motion.button type=\"button\" aria-label={widgetMode ? \"Sair do modo widget\" : \"Modo widget\"} onClick={onToggleWidget}\n          whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.88 }} transition={JELLY}\n          className=\"grid h-10 w-10 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]\"\n",
+    "new": "        </AnimatePresence>\n      </div>\n      <div className=\"flex shrink-0 items-center gap-2\">\n        <ThemeToggle theme={theme} onToggle={onToggleTheme} />\n        <motion.button type=\"button\" aria-label={widgetMode ? \"Sair do modo widget\" : \"Modo widget\"} onClick={onToggleWidget}\n          whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.88 }} transition={JELLY}\n          className=\"grid h-10 w-10 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]\"\n"
+  },
+  {
+    "old": "          style={{ background: fullscreen ? \"var(--chip)\" : \"transparent\", border: \"1px solid var(--edge)\", color: fullscreen ? \"var(--cyan)\" : \"var(--muted)\", boxShadow: fullscreen ? \"0 0 18px -4px var(--glow)\" : \"none\" }}>\n          <Icon name={fullscreen ? \"minimize\" : \"maximize\"} className=\"h-5 w-5\" style={fullscreen ? { filter: \"drop-shadow(0 0 5px var(--cyan))\" } : {}} />\n        </motion.button>\n        <ThemeToggle theme={theme} onToggle={onToggleTheme} />\n      </div>\n    </Bubble>\n  );\n",
+    "new": "          style={{ background: fullscreen ? \"var(--chip)\" : \"transparent\", border: \"1px solid var(--edge)\", color: fullscreen ? \"var(--cyan)\" : \"var(--muted)\", boxShadow: fullscreen ? \"0 0 18px -4px var(--glow)\" : \"none\" }}>\n          <Icon name={fullscreen ? \"minimize\" : \"maximize\"} className=\"h-5 w-5\" style={fullscreen ? { filter: \"drop-shadow(0 0 5px var(--cyan))\" } : {}} />\n        </motion.button>\n        <motion.button type=\"button\" aria-label=\"Fechar Janela\" onClick={() => kernel.call(\"close_window\")}\n          whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.88 }} transition={JELLY}\n          className=\"grid h-10 w-10 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--err)]\"\n          style={{ background: \"transparent\", border: \"1px solid var(--edge)\", color: \"var(--err)\" }}>\n          <Icon name=\"close\" className=\"h-5 w-5\" />\n        </motion.button>\n      </div>\n    </Bubble>\n  );\n"
+  },
+  {
+    "old": "const WIDGET_EXPAND_H = 200;\n\nfunction WidgetPopup({ kernel, theme, voice, onSend, pending, messages, pushLog, onClose }) {\n  const { stopExecution, isStopping } = useContext(ShellFxCtx);\n  const reduce = useReducedMotion();\n  const [pos, setPos] = useState(() => {\n",
+    "new": "const WIDGET_EXPAND_H = 200;\n\nfunction WidgetPopup({ kernel, theme, voice, onSend, pending, messages, pushLog, onClose }) {\n  const [widgetExpanded, setWidgetExpanded] = useState(false);\n  const { stopExecution, isStopping } = useContext(ShellFxCtx);\n  const reduce = useReducedMotion();\n  const [pos, setPos] = useState(() => {\n"
+  },
+  {
+    "old": "  const h = expanded ? WIDGET_EXPAND_H : WIDGET_SIZE;\n  const unread = notifications.length;\n\n  return (\n    <motion.div\n      className=\"fixed z-[9999]\"\n      style={{ left: pos.x, top: pos.y, width: w, height: h }}\n      animate={{ width: w, height: h }}\n      transition={SPRING}\n      onMouseEnter={() => setHovered(true)}\n      onMouseLeave={() => { if (!pinned && !dragging) setHovered(false); setShowNotifs(false); }}\n    >\n      <motion.div\n        className=\"relative h-full w-full overflow-hidden\"\n        style={{\n          borderRadius: expanded ? \"1.8rem\" : \"9999px\",\n          ...(expanded ? GLASS_FX : { background: \"var(--cell)\" }),\n          backdropFilter: expanded ? GLASS_FX.backdropFilter : \"none\",\n          WebkitBackdropFilter: expanded ? GLASS_FX.WebkitBackdropFilter : \"none\",\n          border: \"1px solid var(--edge)\",\n          boxShadow: expanded\n            ? \"inset 0 1px 0 var(--spec),0 28px 60px -20px var(--shadow),0 0 50px -10px var(--glow)\"\n            : \"inset 0 1px 0 var(--spec),inset 0 -12px 22px -10px var(--glow),0 12px 30px -10px var(--shadow),0 0 28px -6px var(--glow)\",\n          cursor: expanded ? \"default\" : dragging ? \"grabbing\" : \"grab\",\n        }}\n        animate={{ borderRadius: expanded ? \"1.8rem\" : \"9999px\" }}\n        transition={SPRING}\n        onPointerDown={startDrag}\n      >\n        <span aria-hidden className=\"pointer-events-none absolute inset-0\" style={{\n          borderRadius: \"inherit\",\n          background: \"radial-gradient(120% 70% at 18% 0%,var(--spec),transparent 46%)\",\n          opacity: 0.4,\n        }} />\n        <span aria-hidden className=\"aios-iris pointer-events-none absolute inset-0\" style={{\n          borderRadius: \"inherit\", padding: 1.5, opacity: 0.6,\n          backgroundImage: \"conic-gradient(from 200deg,var(--rim),transparent 22%,var(--violet) 48%,transparent 68%,var(--rim))\",\n          WebkitMask: \"linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0)\",\n          WebkitMaskComposite: \"xor\",\n          mask: \"linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)\",\n        }} />\n\n        <AnimatePresence mode=\"wait\" initial={false}>\n          {!expanded ? (\n            <motion.div key=\"orb\" className=\"relative flex h-full w-full items-center justify-center\"\n              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={{ duration: 0.2 }}\n            >\n              <motion.span className=\"absolute inset-2 rounded-full\" style={{\n                background: \"radial-gradient(circle at 36% 28%,var(--spec),transparent 60%)\",\n              }} animate={reduce ? undefined : { scale: [1, 1.08, 1] }} transition={{ duration: 3, repeat: Infinity, ease: \"easeInOut\" }} />\n              <motion.span className=\"absolute inset-0 rounded-full\" style={{\n                border: \"1.5px solid var(--cyan)\",\n              }} animate={reduce ? undefined : { scale: [1, 1.25], opacity: [0.5, 0] }} transition={{ duration: 2, repeat: Infinity, ease: \"easeOut\" }} />\n              <button\n                type=\"button\"\n                aria-label=\"Sair do modo widget\"\n                onClick={(event) => { event.stopPropagation(); onClose?.(); }}\n                onPointerDown={(event) => event.stopPropagation()}\n                className=\"absolute -right-1 -top-1 z-20 grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold\"\n                style={{ background: \"var(--err)\", color: \"#fff\", boxShadow: \"0 0 8px var(--err)\" }}\n              >×</button>\n              <Icon name=\"mic\" className=\"relative h-8 w-8\" style={{ color: \"var(--cyan)\", filter: \"drop-shadow(0 0 8px var(--cyan))\" }} />\n              {unread > 0 && (\n                <motion.span key={unread} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={JELLY}\n                  className=\"absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[9px] font-bold\"\n                  style={{ background: \"var(--rose)\", color: \"#fff\", boxShadow: \"0 0 10px var(--rose)\" }}>\n                  {unread > 9 ? \"9+\" : unread}\n                </motion.span>\n              )}\n              {voice.active && (\n                <motion.span className=\"absolute bottom-1 right-1 h-2 w-2 rounded-full\" style={{ background: \"var(--cyan)\", boxShadow: \"0 0 8px var(--cyan)\" }}\n                  animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1, repeat: Infinity }} />\n              )}\n            </motion.div>\n          ) : (\n            <motion.div key=\"panel\" className=\"relative flex h-full w-full flex-col p-3\"\n              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}\n              onPointerDown={(e) => e.stopPropagation()}\n            >\n              <div className=\"mb-2 flex items-center justify-between\">\n                <div className=\"flex items-center gap-2\">\n                  <motion.span className=\"grid h-7 w-7 place-items-center rounded-full\" style={{ background: \"var(--chip)\", border: \"1px solid var(--edge)\" }}>\n                    <Icon name=\"ai\" className=\"h-4 w-4\" style={{ color: \"var(--cyan)\" }} />\n                  </motion.span>\n                  <span className=\"text-[10px] tracking-[0.18em]\" style={{ ...MONO, color: \"var(--cyan)\" }}>AI OS · WIDGET</span>\n                </div>\n                <div className=\"flex items-center gap-1.5\">\n                  <motion.button type=\"button\" aria-label={voice.active ? \"Desligar microfone\" : \"Ligar microfone\"} onClick={voice.onToggle}\n                    whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.85 }} transition={JELLY} disabled={voice.busy}\n                    className=\"grid h-8 w-8 place-items-center rounded-full disabled:opacity-50\"\n                    style={{ background: voice.active ? \"var(--chip)\" : \"transparent\", border: \"1px solid var(--edge)\", color: voice.active ? \"var(--cyan)\" : \"var(--muted)\", boxShadow: voice.active ? \"0 0 14px -3px var(--glow)\" : \"none\" }}>\n                    <Icon name=\"mic\" className=\"h-4 w-4\" style={voice.active ? { filter: \"drop-shadow(0 0 4px var(--cyan))\" } : {}} />\n                  </motion.button>\n                  <motion.button type=\"button\" aria-label=\"Notificações\" onClick={() => setShowNotifs((s) => !s)}\n                    whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.85 }} transition={JELLY}\n                    className=\"relative grid h-8 w-8 place-items-center rounded-full\"\n                    style={{ background: showNotifs ? \"var(--chip)\" : \"transparent\", border: \"1px solid var(--edge)\", color: showNotifs ? \"var(--cyan)\" : \"var(--muted)\" }}>\n                    <Icon name=\"bell\" className=\"h-4 w-4\" />\n                    {unread > 0 && (\n                      <span className=\"absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full px-0.5 text-[8px] font-bold\" style={{ background: \"var(--rose)\", color: \"#fff\" }}>{unread > 9 ? \"9+\" : unread}</span>\n                    )}\n                  </motion.button>\n                  <motion.button type=\"button\" aria-label={pinned ? \"Desafixar\" : \"Fixar\"} onClick={() => setPinned((p) => !p)}\n                    whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.85 }} transition={JELLY}\n                    className=\"grid h-8 w-8 place-items-center rounded-full\"\n                    style={{ background: pinned ? \"var(--chip)\" : \"transparent\", border: \"1px solid var(--edge)\", color: pinned ? \"var(--cyan)\" : \"var(--muted)\" }}>\n                    <span className=\"text-[10px]\" style={MONO}>{pinned ? \"ON\" : \"·\"}</span>\n                  </motion.button>\n                </div>\n              </div>\n\n              <AnimatePresence mode=\"wait\" initial={false}>\n                {showNotifs ? (\n                  <motion.div key=\"notifs\" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={SPRING}\n                    className=\"no-scrollbar min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto\">\n                    {notifications.length === 0 ? (\n                      <div className=\"flex h-full items-center justify-center text-center text-[10px]\" style={{ ...MONO, color: \"var(--muted)\" }}>Sem notificações</div>\n                    ) : notifications.map((n) => {\n                      const c = LEVEL_COLOR[n.level] || \"var(--violet)\";\n                      return (\n                        <motion.div key={n.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={SPRING}\n                          className=\"rounded-xl p-2 text-[10px] leading-snug\" style={{ background: \"var(--chip)\", border: \"1px solid var(--edge)\" }}>\n                          <div className=\"mb-0.5 flex items-center gap-1.5\">\n                            <span className=\"h-1.5 w-1.5 rounded-full\" style={{ background: c, boxShadow: `0 0 6px ${c}` }} />\n                            <span className=\"truncate font-bold tracking-wider\" style={{ ...MONO, color: c }}>{n.title}</span>\n                            <span className=\"ml-auto shrink-0 text-[8px]\" style={{ ...MONO, color: \"var(--muted)\" }}>{n.time.toLocaleTimeString(\"pt-BR\", { hour12: false })}</span>\n                          </div>\n                          <div className=\"truncate\" style={{ color: \"var(--text)\" }}>{n.body}</div>\n                        </motion.div>\n                      );\n                    })}\n                  </motion.div>\n                ) : (\n                  <motion.div key=\"input\" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={SPRING}\n                    className=\"flex min-h-0 flex-1 flex-col\">\n                    {voice.active && (\n                      <div className=\"mb-1.5 flex items-center gap-2\">\n                        <span className=\"flex h-4 items-end gap-[3px]\">\n                          {[0, 1, 2, 3, 4].map((i) => (\n                            <motion.i key={i} className=\"w-[3px] rounded-full\" style={{ background: \"var(--cyan)\" }}\n                              animate={reduce ? { height: 6 } : { height: [3, 12, 5, 14, 3] }} transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.12 }} />\n                          ))}\n                        </span>\n                        <span className=\"text-[9px] font-bold tracking-[0.14em]\" style={{ ...MONO, color: \"var(--cyan)\" }}>OVINDO…</span>\n                      </div>\n                    )}\n                    {pending && (\n                      <div className=\"mb-1.5 flex gap-1\">\n                        {[0, 1, 2].map((i) => <motion.span key={i} className=\"h-1.5 w-1.5 rounded-full\" style={{ background: \"var(--cyan)\" }} animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15 }} />)}\n                      </div>\n                    )}\n                    <form onSubmit={submit} className=\"mt-auto flex items-center gap-1.5 rounded-full py-1 pl-3 pr-1\" style={{ background: \"var(--chip)\", border: \"1px solid var(--edge)\" }}>\n                      <input value={text} onChange={(e) => setText(e.target.value)} placeholder=\"Comando rápido…\" autoFocus\n                        className=\"flex-1 bg-transparent text-xs outline-none placeholder:opacity-60\" style={{ color: \"var(--text)\" }} />\n                      <SendStopButton processing={pending} stopping={isStopping} onStop={stopExecution} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.8 }} transition={JELLY}\n                        className=\"grid h-8 w-8 place-items-center rounded-full text-[#10101a]\" style={{ background: IRIS, boxShadow: text ? \"0 0 14px var(--glow)\" : \"none\" }}>\n                        <Icon name=\"send\" className=\"h-4 w-4\" />\n                      </SendStopButton>\n                    </form>\n                  </motion.div>\n                )}\n              </AnimatePresence>\n            </motion.div>\n          )}\n        </AnimatePresence>\n      </motion.div>\n    </motion.div>\n  );\n}\n\n",
+    "new": "  const h = expanded ? WIDGET_EXPAND_H : WIDGET_SIZE;\n  const unread = notifications.length;\n\n  if (widgetExpanded) {\n    return (\n      <motion.div\n        className=\"fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black text-white\"\n        initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}\n      >\n        <div className=\"flex flex-col items-center gap-10\">\n          {/* Botão 1: Microfone */}\n          <button\n            type=\"button\"\n            onClick={() => { voice.onToggle(); }}\n            className=\"group flex items-center gap-4\"\n          >\n            <Icon name=\"mic\" className=\"h-10 w-10 text-cyan-400 transition-transform group-hover:scale-110\" />\n            <div className=\"overflow-hidden transition-all duration-300 group-hover:w-32 w-0\">\n              <Kinetic text=\"Microfone\" size=\"clamp(20px, 2vw, 28px)\" weight={400} />\n            </div>\n          </button>\n\n          {/* Botão 2: Pesquisa Web */}\n          <button\n            type=\"button\"\n            onClick={() => { /* Implementar modo pesquisa web futuramente */ }}\n            className=\"group flex items-center gap-4\"\n          >\n            <Icon name=\"search\" className=\"h-10 w-10 text-violet-400 transition-transform group-hover:scale-110\" />\n            <div className=\"overflow-hidden transition-all duration-300 group-hover:w-48 w-0\">\n              <Kinetic text=\"Pesquisa Web Assistida\" size=\"clamp(20px, 2vw, 28px)\" weight={400} />\n            </div>\n          </button>\n\n          {/* Botão 3: Expandir GUI */}\n          <button\n            type=\"button\"\n            onClick={() => { setWidgetExpanded(false); onClose?.(); }}\n            className=\"group flex items-center gap-4\"\n          >\n            <Icon name=\"maximize\" className=\"h-10 w-10 text-white/70 transition-transform group-hover:scale-110\" />\n            <div className=\"overflow-hidden transition-all duration-300 group-hover:w-40 w-0\">\n              <Kinetic text=\"Expandir GUI\" size=\"clamp(20px, 2vw, 28px)\" weight={400} />\n            </div>\n          </button>\n        </div>\n      </motion.div>\n    );\n  }\n\n  return (\n    <div\n      className=\"flex h-full w-full items-center justify-between rounded-2xl px-4 shadow-2xl\"\n      style={{ backgroundColor: \"#0d0d14\", border: \"1px solid var(--cyan)\", boxShadow: \"0 0 20px rgba(127,240,224,0.2)\" }}\n    >\n      {/* Botão 1: Microfone */}\n      <button\n        type=\"button\"\n        onClick={() => voice.onToggle()}\n        className=\"group flex flex-col items-center justify-center gap-1 rounded-xl p-2 transition-all hover:bg-white/10\"\n        title=\"Microfone\"\n      >\n        <Icon name=\"mic\" className=\"h-6 w-6\" style={{ color: voice.active ? \"var(--cyan)\" : \"var(--muted)\" }} />\n        <span className=\"text-[9px] font-mono uppercase tracking-widest text-slate-400\">Mic</span>\n      </button>\n\n      {/* Botão 2: Pesquisa Web */}\n      <button\n        type=\"button\"\n        className=\"group flex flex-col items-center justify-center gap-1 rounded-xl p-2 transition-all hover:bg-white/10\"\n        title=\"Pesquisa Assistida\"\n      >\n        <Icon name=\"search\" className=\"h-6 w-6\" style={{ color: \"var(--violet)\" }} />\n        <span className=\"text-[9px] font-mono uppercase tracking-widest text-slate-400\">Buscar</span>\n      </button>\n\n      {/* Botão 3: Chat / Expandir GUI */}\n      <button\n        type=\"button\"\n        onClick={() => onClose?.()}\n        className=\"group flex flex-col items-center justify-center gap-1 rounded-xl p-2 transition-all hover:bg-white/10\"\n        title=\"Abrir Interface\"\n      >\n        <Icon name=\"maximize\" className=\"h-6 w-6\" style={{ color: \"var(--text)\" }} />\n        <span className=\"text-[9px] font-mono uppercase tracking-widest text-slate-400\">GUI</span>\n      </button>\n\n      {/* Botão 4: Fechar */}\n      <button\n        type=\"button\"\n        onClick={() => onClose?.()}\n        className=\"group flex flex-col items-center justify-center gap-1 rounded-xl p-2 transition-all hover:bg-white/10\"\n        title=\"Fechar Widget\"\n      >\n        <Icon name=\"close\" className=\"h-6 w-6\" style={{ color: \"var(--err)\" }} />\n        <span className=\"text-[9px] font-mono uppercase tracking-widest text-slate-400\">Sair</span>\n      </button>\n    </div>\n  );\n}\n\n"
+  },
+  {
+    "old": "  const [voiceBusy, setVoiceBusy] = useState(false);\n  const [fullscreen, setFullscreen] = useState(true);\n  const [widgetMode, setWidgetMode] = useState(false);\n  const [dynamicSchema, setDynamicSchema] = useState(null);\n\n  const pushLog = useCallback((l) => setLogs((prev) => [...prev.slice(-199), { id: uid(), ...l }]), []);\n",
+    "new": "  const [voiceBusy, setVoiceBusy] = useState(false);\n  const [fullscreen, setFullscreen] = useState(true);\n  const [widgetMode, setWidgetMode] = useState(false);\n  useEffect(() => {\n    if (widgetMode) {\n      document.body.style.backgroundColor = \"#0d0d14\"; // Fundo escuro sólido\n      document.documentElement.style.backgroundColor = \"#0d0d14\";\n      document.body.classList.add(\"bg-[#0d0d14]\");\n    } else {\n      document.body.style.backgroundColor = \"\";\n      document.documentElement.style.backgroundColor = \"\";\n      document.body.classList.remove(\"bg-[#0d0d14]\");\n    }\n  }, [widgetMode]);\n  const [dynamicSchema, setDynamicSchema] = useState(null);\n\n  const pushLog = useCallback((l) => setLogs((prev) => [...prev.slice(-199), { id: uid(), ...l }]), []);\n"
+  },
+  {
+    "old": "  const toggleWidget = useCallback(async () => {\n    const next = !widgetMode;\n    setWidgetMode(next);\n    await kernel.call(\"set_widget_mode\", next);\n    if (next) {\n      await kernel.call(\"set_window_size\", 380, 520);\n      pushLog({ level: \"INFO\", core: \"Shell\", msg: \"Modo widget ativado.\" });\n    } else {\n      await kernel.call(\"set_window_size\", 1280, 760);\n      pushLog({ level: \"INFO\", core: \"Shell\", msg: \"Modo widget desativado.\" });\n    }\n  }, [widgetMode, kernel, pushLog]);\n\n  const onSchemaAction = useCallback(async (action, payload, widget) => {\n",
+    "new": "  const toggleWidget = useCallback(async () => {\n    const next = !widgetMode;\n    setWidgetMode(next);\n    const res = await kernel.call(\"set_widget_mode\", next);\n    if (res?.ok === false) {\n      setWidgetMode(!next);\n      pushLog({ level: \"ERROR\", core: \"Widget\", msg: res.error || \"Falha ao alternar widget.\" });\n      return;\n    }\n    pushLog({ level: \"INFO\", core: \"Shell\", msg: next ? \"Modo widget ativado.\" : \"Modo widget desativado.\" });\n  }, [widgetMode, kernel, pushLog]);\n\n  const onSchemaAction = useCallback(async (action, payload, widget) => {\n"
+  },
+  {
+    "old": "\n      {!widgetMode && (\n      <div data-theme={theme} className=\"relative isolate h-screen w-screen select-none overflow-hidden font-sans antialiased\"\n           style={{ ...THEMES[theme], fontFamily: DISPLAY, color: \"var(--text)\", background: \"radial-gradient(120% 90% at 50% 100%,var(--bg-a) 0%,var(--bg-b) 75%)\", transition: \"color .5s\" }}>\n        <Atmosphere />\n        <div className=\"flex h-full gap-4 p-4\">\n          <Menu expanded={menuOpen} onToggle={() => setMenuOpen((o) => !o)} view={v} onNavigate={navigate} skills={skills} groups={groups} voice={voice}\n                consoleOpen={consoleOpen} onToggleConsole={() => setConsoleOpen((o) => !o)} openFolder={openFolder} setOpenFolder={setOpenFolder} />\n\n          <main className=\"flex min-w-0 flex-1 flex-col gap-4\">\n            <Header theme={theme} onToggleTheme={toggleTheme} bridge={kernel.bridge} title={title} trail={trail} voiceOn={voiceOn}\n                    fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} widgetMode={widgetMode} onToggleWidget={toggleWidget} />\n\n            <div ref={wrapRef} className=\"flex min-h-0 flex-1 items-stretch\">\n",
+    "new": "\n      {!widgetMode && (\n      <div data-theme={theme} className=\"relative isolate h-screen w-screen select-none overflow-hidden font-sans antialiased\"\n           style={{ ...THEMES[theme], fontFamily: DISPLAY, color: \"var(--text)\", background: widgetMode ? \"transparent\" : \"radial-gradient(120% 90% at 50% 100%,var(--bg-a) 0%,var(--bg-b) 75%)\", transition: \"color .5s\" }}>\n        <Atmosphere />\n        <div className=\"flex h-full gap-4 p-4\">\n          <Menu expanded={menuOpen} onToggle={() => setMenuOpen((o) => !o)} view={v} onNavigate={navigate} skills={skills} groups={groups} voice={voice}\n                consoleOpen={consoleOpen} onToggleConsole={() => setConsoleOpen((o) => !o)} openFolder={openFolder} setOpenFolder={setOpenFolder} />\n\n          <main className=\"flex min-w-0 flex-1 flex-col gap-4\">\n            <Header kernel={kernel} theme={theme} onToggleTheme={toggleTheme} bridge={kernel.bridge} title={title} trail={trail} voiceOn={voiceOn}\n                    fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} widgetMode={widgetMode} onToggleWidget={toggleWidget} />\n\n            <div ref={wrapRef} className=\"flex min-h-0 flex-1 items-stretch\">\n"
+  },
+  {
+    "old": "\n      <VoiceToast />\n      {widgetMode && (\n        <WidgetPopup kernel={kernel} theme={theme} voice={voice} onSend={sendCommand} pending={pending} messages={messages} pushLog={pushLog} onClose={toggleWidget} />\n      )}\n    </ShellFxCtx.Provider>\n  );\n",
+    "new": "\n      <VoiceToast />\n      {widgetMode && (\n        <Hotbar \n          isMicActive={voiceOn}\n          onMic={toggleVoice}\n          onSearch={() => console.log(\"Pesquisa em breve\")}\n          onExpand={toggleWidget}\n          onClose={toggleWidget}\n        />\n      )}\n    </ShellFxCtx.Provider>\n  );\n"
+  },
+  {
+    "old": "    window.addEventListener(\"aios:schema\", onSchema);\n    window.addEventListener(\"aios:ui\", onSchema);",
+    "new": "    window.addEventListener(\"aios:schema\", onSchema);\n    window.addEventListener(\"aios:ui\", onSchema);\n    const onWidgetClosed = () => {\n      setWidgetMode(false);\n    };\n    window.addEventListener(\"aios:widget_closed\", onWidgetClosed);"
+  },
+  {
+    "old": "      window.removeEventListener(\"aios:schema\", onSchema);\n      window.removeEventListener(\"aios:ui\", onSchema);",
+    "new": "      window.removeEventListener(\"aios:schema\", onSchema);\n      window.removeEventListener(\"aios:ui\", onSchema);\n      window.removeEventListener(\"aios:widget_closed\", onWidgetClosed);"
+  },
+  {
+    "old": "    pushLog({ level: \"INFO\", core: \"Shell\", msg: next ? \"Modo widget ativado.\" : \"Modo widget desativado.\" });",
+    "new": "    pushLog({ level: \"INFO\", core: \"Shell\", msg: next ? \"Hotbar ativada.\" : \"Hotbar desativada.\" });"
+  },
+  {
+    "old": "    const onWidgetClosed = () => {\n      setWidgetMode(false);\n    };",
+    "new": "    const onWidgetClosed = () => {\n      setWidgetMode(false);\n      pushLog({ level: \"INFO\", core: \"Shell\", msg: \"Hotbar fechada. GUI principal restaurada.\" });\n    };"
+  },
+  {
+    "old": "              className={`max-w-[86%] px-5 py-3 text-sm leading-relaxed ${m.role === \"user\" ? \"self-end rounded-[1.9rem] rounded-br-lg\" : \"self-start rounded-[1.9rem] rounded-bl-lg\"}`}\n              style={{ background: m.role === \"user\" ? \"var(--bubble-user)\" : \"var(--chip)\", border: `1px solid ${m.role === \"user\" ? \"var(--violet)\" : \"var(--edge)\"}`, boxShadow: m.role === \"user\" ? \"0 0 22px -8px var(--violet)\" : \"none\" }}>\n              {m.text}\n            </motion.div>",
+    "new": "              className={`max-w-[86%] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap flex flex-col ${m.role === \"user\" ? \"self-end items-end rounded-[1.9rem] rounded-br-lg\" : \"self-start items-start rounded-[1.9rem] rounded-bl-lg\"}`}\n              style={{ background: m.role === \"user\" ? \"var(--bubble-user)\" : \"var(--chip)\", border: `1px solid ${m.role === \"user\" ? \"var(--violet)\" : \"var(--edge)\"}`, boxShadow: m.role === \"user\" ? \"0 0 22px -8px var(--violet)\" : \"none\" }}>\n              <div>{m.text}</div>\n              <div className=\"mt-1 flex items-center gap-2 text-[9px] opacity-40\" style={MONO}>\n                <span>{new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>\n                {m.duration && <span>• {m.duration}s</span>}\n              </div>\n            </motion.div>",
+    "count": 1
+  },
+  {
+    "old": "                          className={`line-clamp-2 max-w-[90%] rounded-2xl px-3 py-1.5 text-xs ${m.role === \"user\" ? \"self-end\" : \"self-start\"}`}",
+    "new": "                          className={`line-clamp-2 max-w-[90%] rounded-2xl px-3 py-1.5 text-xs whitespace-pre-wrap ${m.role === \"user\" ? \"self-end\" : \"self-start\"}`}"
+  },
+  {
+    "new": "      <AnimatePresence>\n        {intuition && (\n          <motion.div\n            initial={{ opacity: 0, y: 50, scale: 0.9 }}\n            animate={{ opacity: 1, y: 0, scale: 1 }}\n            exit={{ opacity: 0, y: 20, scale: 0.9 }}\n            className=\"fixed bottom-24 right-8 z-50 max-w-sm rounded-2xl border p-4 shadow-2xl backdrop-blur-md\"\n            style={{ background: \"var(--cell)\", borderColor: \"var(--edge)\", color: \"var(--text)\" }}\n          >\n            <div className=\"flex items-start gap-3\">\n              <div className=\"flex h-8 w-8 shrink-0 items-center justify-center rounded-full\" style={{ background: \"var(--chip)\", color: \"var(--cyan)\" }}>\n                <Icon name=\"brain\" className=\"h-4 w-4\" />\n              </div>\n              <div>\n                <p className=\"text-xs font-semibold tracking-wider opacity-60\" style={MONO}>INTUIÇÃO DA REDE</p>\n                <p className=\"mt-1 text-sm leading-relaxed\">{intuition.message}</p>\n                <p className=\"mt-2 text-[10px] opacity-50\" style={MONO}>Confiança: {(intuition.confidence * 100).toFixed(0)}%</p>\n              </div>\n            </div>\n          </motion.div>\n        )}\n      </AnimatePresence>\n\n",
+    "old": "",
+    "count": 1
+  },
+  {
+    "new": "  const [intuition, setIntuition] = useState(null);\n",
+    "old": "",
+    "count": 1
+  },
+  {
+    "new": "    const onIntuition = (e) => {\n      setIntuition(e.detail);\n      setTimeout(() => setIntuition(null), 10000); // Some após 10s\n    };\n",
+    "old": "",
+    "count": 1
+  },
+  {
+    "new": "    window.addEventListener(\"aios:intuition\", onIntuition);\n",
+    "old": "",
+    "count": 1
+  },
+  {
+    "new": "      window.removeEventListener(\"aios:intuition\", onIntuition);\n",
+    "old": "",
+    "count": 1
+  },
+  {
+    "old": "function ChatPanel({ messages, pending, onSend }) {",
+    "new": "function ChatPanel({ messages, pending, onSend, kernel }) {\n  const [isDragging, setIsDragging] = useState(false);"
+  },
+  {
+    "old": "",
+    "new": "  const handleDrop = async (e) => {\n    e.preventDefault();\n    setIsDragging(false);\n    const file = e.dataTransfer.files[0];\n    if (!file) return;\n    \n    const reader = new FileReader();\n    reader.onload = async (evt) => {\n      const base64 = evt.target.result.split(\",\")[1];\n      onSend(`[Arquivo recebido: ${file.name}]. Processando...`);\n      const res = await kernel.call(\"process_dropped_file\", base64, file.name);\n      if (res && res.ok) {\n        onSend(`[✅ Arquivo '${file.name}' absorvido! ${res.chars} caracteres memorizados.]`);\n      } else {\n        onSend(`[❌ Falha ao ler arquivo: ${res?.error}]`);\n      }\n    };\n    reader.readAsDataURL(file);\n  };\n"
+  },
+  {
+    "old": "",
+    "new": "    <div className=\"relative h-full\" onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop}>\n      {isDragging && (\n        <div className=\"absolute inset-0 z-50 flex items-center justify-center rounded-[1.9rem] bg-[var(--glass)] backdrop-blur-md border-2 border-dashed border-[var(--cyan)]\">\n          <p className=\"text-lg font-light text-[var(--cyan)]\">Solte o arquivo (PDF ou TXT) aqui</p>\n        </div>\n      )}\n"
+  },
+  {
+    "old": "    </Bubble>\n  );\n}\n\n/* ── 12. Palco:",
+    "new": "    </Bubble>\n    </div>\n  );\n}\n\n/* ── 12. Palco:"
+  },
+  {
+    "old": "<ChatPanel messages={messages} pending={pending} onSend={sendCommand} />",
+    "new": "<ChatPanel messages={messages} pending={pending} onSend={sendCommand} kernel={kernel} />",
+    "count": 2
+  }
+]

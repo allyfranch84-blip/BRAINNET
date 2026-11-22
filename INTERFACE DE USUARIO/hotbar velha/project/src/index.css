@@ -1,0 +1,31 @@
+html, body, #root {
+  background-color: transparent !important;
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden !important;
+  width: 100vw;
+  height: 100vh;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes eq-bar {
+  0%, 100% { transform: scaleY(0.2); }
+  50% { transform: scaleY(1); }
+}
+.eq-bar {
+  transform-origin: bottom;
+  animation-name: eq-bar;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.app-drag { -webkit-app-region: drag; }
+.app-no-drag { -webkit-app-region: no-drag; }
+
+/* FORÇA BRUTA DA TRANSPARÊNCIA NO PYTHON */
+::-webkit-scrollbar {
+  display: none;
+}

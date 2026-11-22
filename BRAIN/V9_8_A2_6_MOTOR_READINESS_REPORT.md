@@ -1,0 +1,13 @@
+# V9.8-A2.6 — Preparação da prova motora
+
+**Estado: NOT_READY. Nenhuma atuação foi executada.**
+
+- Janela existente HWND 8389610, PID 13676, visível na observação de 17:33:08 de 12/11/2026; não foi aberta nova instância. O loop continuava a registrar batimentos.
+- Área cliente `(242, 265, 632, 555)` em coordenadas de tela obtidas por `GetClientRect` e `ClientToScreen` após a thread observadora configurar DPI per-monitor v2; chamada de configuração informou sucesso. `GetPhysicalCursorPos` retornou `(512, 412)` nessa observação. A posição muda e deve ser relida imediatamente antes de qualquer proposta.
+- Observação UIA atual retornou apenas a barra de título, sem inventário dos controles. Uma varredura anterior identificou TESTE A e B, mas não comprova a posição atual de todos os controles nem exclusões seguras. Não há região vazia comprovada; não instruímos o operador a posicionar o cursor em coordenadas que poderiam encobrir um controle.
+- O executor `Effector.mouse_move` usa `GetCursorPos` e `SetCursorPos` no contexto DPI da thread executora, não `GetPhysicalCursorPos`. A equivalência do espaço do executor com o físico não foi estabelecida.
+- O movimento existente emprega Bézier e jitter gaussiano, podendo sair do segmento horizontal entre os extremos; verificar apenas esse segmento não comprova segurança de toda a trajetória. A dispersão gaussiana não tem limite estrito no código. A trajetória física precisa de limitação ou prova apropriada antes de autorizar uma região.
+- O caminho de produção `BrainnetBridge._send_command_impl` reconhece movimento supervisionado e retorna `AUTHORIZATION_REQUIRED` como proposta; não chama `capability_lab.verify_relative_move`. Portanto, o Chat unificado ainda não possui caminho comprovado até executor e verificador para este teste. A função `verify_relative_move` existente usa `ActuatorBridge.dispatch` e consulta independente, mas invocá-la isoladamente contornaria o requisito de usar o Kernel, e não foi invocada.
+- Verificação futura: reobservar janela e controles, DPI da thread real do executor, cursor físico e monitor; após autorização, comparar nova leitura independente `GetPhysicalCursorPos` com destino validado e verificar resultado da operação. Revalidar contexto imediatamente antes da execução.
+
+Observação bruta: `development_logs/V9_8_A2_6_observation.json`; script de leitura: `development_logs/V9_8_A2_6_observe.py`. Monitor DISPLAY1 foi identificado em A2.5/A2.4, mas a associação atual ao cursor não foi repetida nesta etapa e não é aqui presumida. Nenhum ponto inicial/final para execução foi autorizado ou validado.

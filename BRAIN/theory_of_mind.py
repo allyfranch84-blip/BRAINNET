@@ -1,0 +1,225 @@
+# ==============================================================================
+# BRAINNET v7 - SISTEMA OPERACIONAL COGNITIVO
+# MODULO: theory_of_mind.py
+# FUNCAO: Teoria da Mente, Afeto Humano, Rejeição de Inviabilidade Pragmática
+#         e Gating Motor Go / No-Go (Gânglios da Base).
+# ==============================================================================
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+import logging
+from pathlib import Path
+import re
+import sys
+import time
+from typing import Any, Dict, Optional
+import numpy as np
+
+BRAIN_DIR = Path(__file__).resolve().parent
+if str(BRAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(BRAIN_DIR))
+
+from hyperdimensional import FHRRHyperdimensionalEngine
+
+logger = logging.getLogger("BRAINNET_ToM")
+
+
+class MotorGateState(str, Enum):
+    GO = "GO_AUTHORIZED"
+    NO_GO = "NO_GO_LOCKED"
+    PRAGMATIC_REJECT = "REJECT_LAPSUS"
+    CLARIFICATION = "NEED_MORE_DATA"
+
+
+@dataclass(slots=True, frozen=True)
+class MentalizingJudgment:
+    gate: MotorGateState
+    intended_goal: str
+    underlying_meaning: str
+    is_physical_world: bool
+    requires_social_dialogue: bool
+    confidence_evidence: float
+    explanation_to_user: str
+
+
+class TheoryOfMindEngine:
+    """
+    [CÓRTEX DE TEORIA DA MENTE E GATING MOTOR NÃO-LINEAR]:
+    Substitui regexes rígidos por bacias de atração contínuas no Toro C^10.000.
+    Calcula a distribuição de Gibbs sobre estados mentais:
+    P(Afeto), P(Físico), P(Social), P(Teórico), P(Operacional).
+    """
+
+    __slots__ = (
+        "vsa",
+        "threshold_go",
+        "attractor_affection",
+        "attractor_physical_lapsus",
+        "attractor_social_banter",
+        "attractor_theoretical",
+        "attractor_operational",
+        "effector"
+    )
+
+    def __init__(self, vsa_engine: Optional[FHRRHyperdimensionalEngine] = None, threshold_go: float = 0.55, effector: Any = None) -> None:
+        self.vsa = vsa_engine or FHRRHyperdimensionalEngine(dimension=10_000, seed=42)
+        self.threshold_go = threshold_go
+        self.effector = effector
+
+        # 5 Bacias de Atração Ontológicas no Toro C^10.000
+        self.attractor_affection = self.vsa.generate_vector(
+            "AFETO_HUMANO_CARINHO_ABRACO_BEIJO_EMPATIA_AMOR_CUIDADO_SENTIMENTO_ACOLHIMENTO"
+        )
+        self.attractor_physical_lapsus = self.vsa.generate_vector(
+            "MUNDO_FISICO_MATERIAL_GELADEIRA_FOGAO_COMIDA_PAO_PORTA_CARRO_LAVAR_ANDAR_CORPO_BIOLOGICO"
+        )
+        self.attractor_social_banter = self.vsa.generate_vector(
+            "INTERACAO_SOCIAL_SAUDACAO_OLA_BOM_DIA_PIADA_HUMOR_PROVERBIO_CULTURA_CONVERSA"
+        )
+        self.attractor_theoretical = self.vsa.generate_vector(
+            "DUVIDA_TEORICA_EXPLICACAO_CONCEITUAL_CIENCIA_FILOSOFIA_HISTORIA_O_QUE_E_COMO_FUNCIONA"
+        )
+        self.attractor_operational = self.vsa.generate_vector(
+            "ACAO_OPERACIONAL_SISTEMA_APLICATIVO_NAVEGADOR_DIGITAR_CLICAR_BUSCAR_TERMINAL_WINDOWS_ABRIR_FECHAR_ENCERRAR_MATAR_FINALIZAR_MINIMIZAR_MAXIMIZAR_RESTAURAR"
+        )
+
+    def _calcular_distribuicao_intencao(self, prompt: str) -> Dict[str, float]:
+        v_prompt = self.vsa.generate_vector(prompt.lower().strip())
+
+        sims = {
+            "AFETO": max(0.0, self.vsa.similarity(v_prompt, self.attractor_affection)),
+            "FISICO": max(0.0, self.vsa.similarity(v_prompt, self.attractor_physical_lapsus)),
+            "SOCIAL": max(0.0, self.vsa.similarity(v_prompt, self.attractor_social_banter)),
+            "TEORICO": max(0.0, self.vsa.similarity(v_prompt, self.attractor_theoretical)),
+            "OPERACIONAL": max(0.0, self.vsa.similarity(v_prompt, self.attractor_operational))
+        }
+
+        # Normalização Não-Linear de Gibbs (Beta = 8.0 amplifica atratores fortes)
+        s_arr = np.array(list(sims.values()), dtype=np.float32)
+        exp_s = np.exp(s_arr * 8.0)
+        probs = exp_s / np.sum(exp_s)
+        return {k: float(probs[i]) for i, k in enumerate(sims.keys())}
+
+    def evaluate_intent(self, raw_prompt: str, active_context: Dict[str, Any]) -> MentalizingJudgment:
+        from parser_contract import analyze_literal_intent
+        from system_intent import is_unqualified_physical_door
+        text = raw_prompt.strip()
+        p_low = text.lower()
+        has_body = getattr(getattr(self, "effector", None), "has_physical_body", False)
+        if not has_body and (re.search(r"\b(?:arm[aá]rio|papel|geladeira|boca)\b", p_low) or is_unqualified_physical_door(text)):
+            return MentalizingJudgment(
+                gate=MotorGateState.PRAGMATIC_REJECT, intended_goal=text,
+                underlying_meaning="Alvo fisico fora das capacidades dos atuadores Windows.",
+                is_physical_world=True, requires_social_dialogue=False,
+                confidence_evidence=1.0,
+                explanation_to_user="Não tenho atuadores físicos para realizar essa ação no mundo material."
+            )
+
+        # Projeção no Campo Probabilístico em C^10.000
+        probs = self._calcular_distribuicao_intencao(p_low)
+        # Evidence from the existing structured contract refines the model's
+        # distribution; the subsequent ToM checks and independent authority remain.
+        structured = analyze_literal_intent(text)
+        if (structured['intent_kind'] == 'OPEN_APP' and structured['domain'] == 'DIGITAL_UI'
+                and not structured['negated'] and not structured['ambiguous']):
+            probs['OPERACIONAL'] *= 4.0
+            total = sum(probs.values())
+            probs = {key: value / total for key, value in probs.items()}
+        vencedor = max(probs, key=probs.get)
+        confianca = probs[vencedor]
+
+        # 1. AFETO HUMANO / CARINHO (Zero cliques, resposta calorosa)
+        if vencedor == "AFETO" and confianca > 0.35:
+            return MentalizingJudgment(
+                gate=MotorGateState.NO_GO,
+                intended_goal=text,
+                underlying_meaning=f"Expressão de afeto humano ({confianca:.2%}). Via motora travada em repouso.",
+                is_physical_world=True,
+                requires_social_dialogue=True,
+                confidence_evidence=round(confianca, 3),
+                explanation_to_user="🤗 Eu adoraria retribuir com um abraço bem apertado! Como sou um sistema digital no seu computador, não tenho braços físicos, mas estou sempre aqui com você para o que der e vier no Windows!"
+            )
+
+        # 2. LAPSO MATERIAL FÍSICO ("GELADEIRA / MUNDO FÍSICO")
+        if vencedor == "FISICO" and confianca > 0.35:
+            if has_body:
+                return MentalizingJudgment(
+                    gate=MotorGateState.GO,
+                    intended_goal=text,
+                    underlying_meaning=f"Manipulação do mundo material ({confianca:.2%}) autorizada pelo corpo físico.",
+                    is_physical_world=True,
+                    requires_social_dialogue=False,
+                    confidence_evidence=round(confianca, 3),
+                    explanation_to_user="Desinibição motora autorizada para o mundo físico."
+                )
+            else:
+                alvo = text.replace('abra o ', '').replace('abra a ', '').strip()
+                reply = f"🛑 Ação fisicamente impossível. Eu sou um sistema digital no Windows 11 e não possuo braços mecânicos para interagir com '{alvo}'."
+                return MentalizingJudgment(
+                    gate=MotorGateState.PRAGMATIC_REJECT,
+                    intended_goal=text,
+                    underlying_meaning=f"Manipulação do mundo material ({confianca:.2%}) fora dos limites do SO.",
+                    is_physical_world=True,
+                    requires_social_dialogue=True,
+                    confidence_evidence=round(confianca, 3),
+                    explanation_to_user=reply
+                )
+
+        # 3. INTERAÇÃO SOCIAL E HUMOR
+        if vencedor == "SOCIAL" and confianca > 0.40:
+            return MentalizingJudgment(
+                gate=MotorGateState.NO_GO,
+                intended_goal=text,
+                underlying_meaning=f"Interação social ou cultura brasileira ({confianca:.2%}).",
+                is_physical_world=False,
+                requires_social_dialogue=True,
+                confidence_evidence=round(confianca, 3),
+                explanation_to_user="Canal social ativado."
+            )
+
+        # 4. AMBIGUIDADE CRÍTICA (Entropia alta: nenhuma probabilidade clara)
+        if confianca < 0.28 and len(p_low.split()) <= 3:
+            return MentalizingJudgment(
+                gate=MotorGateState.CLARIFICATION,
+                intended_goal=text,
+                underlying_meaning="Alta incerteza variacional. Ordem ambígua sem âncora definida.",
+                is_physical_world=False,
+                requires_social_dialogue=True,
+                confidence_evidence=round(confianca, 3),
+                explanation_to_user="Você pediu para interagir, mas não especificou qual elemento ou aplicativo deseja acessar. Me informe o nome ou link."
+            )
+
+        # 5. DIÁLOGO CONCEITUAL / DÚVIDA TEÓRICA
+        if vencedor == "TEORICO" and confianca > 0.38 and not any(w in p_low for w in ["abra", "inicie", "clique", "mande", "digite"]):
+            return MentalizingJudgment(
+                gate=MotorGateState.NO_GO,
+                intended_goal=text,
+                underlying_meaning=f"Dúvida teórica ou diálogo conceitual ({confianca:.2%}). Via motora preservada.",
+                is_physical_world=False,
+                requires_social_dialogue=True,
+                confidence_evidence=round(confianca, 3),
+                explanation_to_user="Canal conversacional."
+            )
+
+        # 6. DESINIBIÇÃO MOTORA TOTAL (GÂNGLIOS DA BASE: GATE == GO)
+        return MentalizingJudgment(
+            gate=MotorGateState.GO,
+            intended_goal=text,
+            underlying_meaning=f"Intenção operacional predominante ({probs['OPERACIONAL']:.2%}). Desinibição motora autorizada.",
+            is_physical_world=False,
+            requires_social_dialogue=False,
+            confidence_evidence=round(probs['OPERACIONAL'], 3),
+            explanation_to_user="Desinibição motora autorizada para planejamento causal."
+        )
+            
+
+        # 4. AMBIGUIDADE CRÍTICA
+
+        # 5. DESINIBIÇÃO MOTORA COGNITIVA (GÂNGLIOS DA BASE LIVRES DE REGEX ENGESSADO)
+        # Se for uma pergunta explicativa pura ou conversa reflexiva, mantém No-Go conversacional
+
+
+        # Qualquer ordem operativa, jargão (ex: 'whatssapmensage'), menção a software ou instrução
+        # recebe desinibição Go para que o Córtex Causal processe a Meta-Primitiva

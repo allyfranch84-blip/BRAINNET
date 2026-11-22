@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    "Core",
+    "Edge CPU",
+    "Desktop GPU",
+    "Servidor opcional"
+  ],
+  "components": [
+    {
+      "name": "brainnet-core",
+      "role": "kernel",
+      "source": "PENDENTE",
+      "revision": "PENDENTE",
+      "license": "PENDENTE",
+      "format": "source",
+      "backend": "python",
+      "minimum": "PENDENTE",
+      "download_bytes": null,
+      "sha256": null,
+      "dependencies": [],
+      "profiles": [
+        "Core",
+        "Edge CPU",
+        "Desktop GPU",
+        "Servidor opcional"
+      ],
+      "fallback": "indisponível até instalação"
+    },
+    {
+      "name": "llama.cpp",
+      "role": "inference",
+      "source": "https://github.com/ggml-org/llama.cpp",
+      "revision": "PENDENTE",
+      "license": "PENDENTE",
+      "format": "executable",
+      "backend": "llamacpp",
+      "minimum": "PENDENTE",
+      "download_bytes": null,
+      "sha256": null,
+      "dependencies": [],
+      "profiles": [
+        "Edge CPU",
+        "Desktop GPU",
+        "Servidor opcional"
+      ],
+      "fallback": "Ollama se configurado e disponível"
+    },
+    {
+      "name": "optional-model",
+      "role": "language",
+      "source": "PENDENTE",
+      "revision": "PENDENTE",
+      "license": "PENDENTE",
+      "format": "GGUF",
+      "backend": "llamacpp",
+      "minimum": "PENDENTE",
+      "download_bytes": null,
+      "sha256": null,
+      "dependencies": [
+        "llama.cpp"
+      ],
+      "profiles": [
+        "Edge CPU",
+        "Desktop GPU",
+        "Servidor opcional"
+      ],
+      "fallback": "informar modelo indisponível"
+    },
+    {
+      "name": "optional-rust-extension",
+      "role": "acceleration",
+      "source": "PENDENTE",
+      "revision": "PENDENTE",
+      "license": "PENDENTE",
+      "format": "python-wheel",
+      "backend": "optional",
+      "minimum": "PENDENTE",
+      "download_bytes": null,
+      "sha256": null,
+      "dependencies": [],
+      "profiles": [
+        "Edge CPU",
+        "Desktop GPU",
+        "Servidor opcional"
+      ],
+      "fallback": "NumPy/Python; nenhuma extensão instalada"
+    }
+  ],
+  "observed_inventory": {
+    "source": "local manifests, no model loaded",
+    "ollama_models": [
+      {
+        "identifier": "ollama.com/library/brainnet-parser/latest",
+        "backend": "ollama-manifest",
+        "bytes": 986048562,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "ollama.com/library/brainnet7b/latest",
+        "backend": "ollama-manifest",
+        "bytes": 4683073907,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/huihui_ai/qwen2.5-abliterate/7b",
+        "backend": "ollama-manifest",
+        "bytes": 4683087922,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/all-minilm/latest",
+        "backend": "ollama-manifest",
+        "bytes": 45961296,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/nomic-embed-text/latest",
+        "backend": "ollama-manifest",
+        "bytes": 274302738,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen2.5/0.5b",
+        "backend": "ollama-manifest",
+        "bytes": 397821686,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen2.5/1.5b",
+        "backend": "ollama-manifest",
+        "bytes": 986062262,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen2.5-coder/14b",
+        "backend": "ollama-manifest",
+        "bytes": 8988124668,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen2.5-coder/7b",
+        "backend": "ollama-manifest",
+        "bytes": 4683087932,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen2.5vl/3b",
+        "backend": "ollama-manifest",
+        "bytes": 3200627603,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen3-vl/2b",
+        "backend": "ollama-manifest",
+        "bytes": 1889520029,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen3-vl/4b",
+        "backend": "ollama-manifest",
+        "bytes": 3336620046,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      },
+      {
+        "identifier": "registry.ollama.ai/library/qwen3-vl/8b",
+        "backend": "ollama-manifest",
+        "bytes": 6190972614,
+        "availability": "MANIFEST_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN",
+        "compatibility": "UNKNOWN"
+      }
+    ],
+    "gguf_files": [
+      {
+        "path": "A:\\BRAINNET\\BRAIN\\brainnet-parser-v2.gguf",
+        "bytes": 3093669184,
+        "availability": "FILE_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN"
+      },
+      {
+        "path": "A:\\BRAINNET\\BRAIN\\models\\brainnet-7b-q4_k_m.gguf",
+        "bytes": 4683073504,
+        "availability": "FILE_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN"
+      },
+      {
+        "path": "A:\\BRAINNET\\BRAIN\\models\\brainnet-parser-1.5b-q4_k_m.gguf",
+        "bytes": 986048160,
+        "availability": "FILE_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN"
+      },
+      {
+        "path": "A:\\BRAINNET\\models\\gguf\\Qwen2.5-0.5B-Instruct-ollama.gguf",
+        "bytes": 397807936,
+        "availability": "FILE_PRESENT_NOT_TESTED",
+        "revision": "UNKNOWN",
+        "license": "UNKNOWN"
+      }
+    ]
+  }
+}
