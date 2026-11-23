@@ -24,6 +24,18 @@ Nenhuma janela Notepad ou `BRAINNET — Laboratório seguro` foi encontrada na e
 
 ## Diagnóstico manual seguro posterior
 
+### Ensaio supervisionado posterior — 23/11/2026
+
+O usuário abriu manualmente um Bloco de Notas vazio e confirmou o ensaio. O alvo foi identificado por enumeração de janelas visíveis e processo `notepad.exe`, com HWND `4260722` e PID `4484`; não foi selecionado pelo título de um documento nem pela janela BRAINNET. O diagnóstico foi invocado explicitamente com esses identificadores, sem incluir nomes de controles e sem captura de imagem.
+
+| Foco antes e depois | Resultado do alvo explícito | Elementos UIA | Exemplos de tipo | Latência interna |
+|---|---|---:|---|---:|
+| Bloco de Notas (HWND 4260722, PID 4484) | OBSERVED; provedor RESPONDED | 26 | EditControl, ScrollBarControl, ButtonControl | 183,925 ms |
+| Paint (HWND 50923186, PID 19152) | OBSERVED; provedor RESPONDED | 26 | EditControl, ScrollBarControl, ButtonControl | 145,104 ms |
+| PowerShell (HWND 42010708, PID 19772) | OBSERVED; provedor RESPONDED | 26 | EditControl, ScrollBarControl, ButtonControl | 145,598 ms |
+
+As durações totais dos processos foram respectivamente 813, 703 e 703 ms. A biblioteca estava disponível; nenhuma degradação foi reportada. As contagens incluem elementos UIA e eventualmente sua raiz. Os ensaios foram observações Windows reais do diagnóstico independente; não são testes pela GUI operacional nem prova de funcionamento do `/uia scan` no Chat. Os resultados com Paint e PowerShell em foco comprovam que a ferramenta que recebe HWND/PID explícitos não seleciona a janela ativa. O handler atual usa `GetForegroundWindow`, que na terceira observação identificou PowerShell; não foi executado `/uia scan` no terminal ou na GUI. Os retângulos observados também mudaram entre os ensaios, reforçando a necessidade de revalidação de geometria. A influência do foco na MasterShell continua sem teste real pela GUI. Não foram salvos nomes, títulos de documentos ou conteúdo.
+
 Sem iniciar aplicações por este script, o usuário pode abrir manualmente uma janela de teste Notepad sem dados privados e obter HWND/PID em seu PowerShell interativo:
 
 ```powershell
