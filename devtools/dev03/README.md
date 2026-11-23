@@ -24,6 +24,16 @@ Salve o arquivo JSON **fora da cópia Git**. `base_commit` e `target_commit` sã
 
 A ferramenta exige HEAD no commit aprovado, árvore Git limpa inclusive arquivos não rastreados e a base ancestral do alvo. Arquivos protegidos, extensões não permitidas, travessia, links/junctions e conflitos são recusados. Não faz `pull`, `reset`, remoção de arquivos extras, cópia integral nem ações motoras.
 
+### Git e Python no Windows
+
+O wrapper procura o Git incorporado ao GitHub Desktop em `GitHubDesktop/app-*/resources/app/git/cmd/git.exe`, incluindo o perfil do usuário quando `LOCALAPPDATA` for isolado; depois tenta o PATH. Para Python, tenta `py -3.12` quando disponível e funcional, a instalação padrão Python 3.12 do perfil e por último o PATH. A versão mínima é 3.10. Nenhum PATH permanente é alterado. Se a descoberta falhar, informe caminhos absolutos confiáveis explicitamente:
+
+```powershell
+& $tool -Preview -Manifest '<manifesto>' -GitPath '<caminho absoluto do git.exe>' -PythonPath '<caminho absoluto do python.exe>'
+```
+
+`-GitPath` e `-PythonPath` rejeitam caminhos inexistentes ou relativos; seus executáveis são testados antes da prévia. O teste representativo usa um repositório temporário e PATH sem Git ou Python; não acessa a instalação operacional.
+
 ## Prévia, aplicação e rollback
 
 No PowerShell, somente após revisão do manifesto:
@@ -54,3 +64,7 @@ O `A:\BRAINNET\iniciar\iniciar_aios.bat` atual contém `taskkill /F /IM ollama.e
 ## Limites
 
 O detector de processos usa `Get-CimInstance` e é conservador: bloqueia também Python/Node com linha de comando inacessível e qualquer Ollama/llama-server. Não garante exclusividade contra um processo iniciado depois da verificação; a instalação deve ocorrer numa janela supervisionada sem reinícios concorrentes. A fonte deve ser byte a byte igual ao blob Git: conversões automáticas LF/CRLF podem provocar recusa, sem conversão silenciosa. O manifesto e os backups exigem proteção do próprio sistema de arquivos contra alteração por terceiros. Os testes de aplicação e rollback usam somente árvores temporárias, com a verificação de processos simulada. A criação de junction real pode depender das permissões do Windows; não considerar uma simulação equivalente a validação real de junction. Sem implantação ou teste funcional real até aprovação explícita.
+
+### Validação futura de junctions
+
+As verificações atuais de caminho e a escrita são operações distintas, portanto não eliminam troca concorrente de junction/reparse point (TOCTOU). A solução precisa manter handles confiáveis de diretórios e arquivos, abertos sem seguir reparse points, confirmar por handle o tipo e a identidade física/volume e executar a escrita/renomeação relativa aos handles validados. Projetar e revisar o uso das APIs Windows para isso antes de implementá-lo; comparar apenas strings ou chamar `lstat` duas vezes não basta. Validar em árvore temporária Windows real com junctions, links simbólicos e substituição concorrente, incluindo testes de negação e rollback, em sessão autorizada. O bloqueio real permanece até essa evidência e revisão independente.

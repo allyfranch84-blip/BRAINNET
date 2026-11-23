@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -207,6 +208,60 @@ class DeploymentTests(unittest.TestCase):
                                  '-BackupRoot', str(self.backup), '-Manifest', str(self.manifest)],
                                 capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+        self.assertFalse(self.backup.exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'resolução específica do Windows')
+    def test_preview_without_git_or_python_on_path_uses_desktop_and_explicit_python(self):
+        desktop = Path(os.environ['USERPROFILE']) / 'AppData/Local/GitHubDesktop'
+        candidates = sorted(desktop.glob('app-*/resources/app/git/cmd/git.exe'), reverse=True)
+        if not candidates: self.skipTest('GitHub Desktop indisponível')
+        powershell = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        env = os.environ.copy()
+        env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
+        env['LOCALAPPDATA'] = str(self.root / 'localappdata-vazio')
+        script = Path(__file__).with_name('Deploy-BrainnetPatch.ps1')
+        result = subprocess.run([str(powershell), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+                                 '-Preview', '-Source', str(self.src), '-Destination', str(self.dst),
+                                 '-BackupRoot', str(self.backup), '-Manifest', str(self.manifest),
+                                 '-PythonPath', sys.executable], capture_output=True, timeout=30, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+        self.assertIn(b'plan_sha256', result.stdout)
+        self.assertFalse(self.backup.exists())
+        result = subprocess.run([str(powershell), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+                                 '-Preview', '-Source', str(self.src), '-Destination', str(self.dst),
+                                 '-BackupRoot', str(self.backup), '-Manifest', str(self.manifest),
+                                 '-PythonPath', sys.executable, '-GitPath', str(candidates[0])],
+                                capture_output=True, timeout=30, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+        self.assertFalse(self.backup.exists())
+
+    def test_invalid_explicit_executable_fails_closed(self):
+        script = Path(__file__).with_name('Deploy-BrainnetPatch.ps1')
+        result = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+                                 '-Preview', '-Source', str(self.src), '-Destination', str(self.dst),
+                                 '-BackupRoot', str(self.backup), '-Manifest', str(self.manifest),
+                                 '-GitPath', str(self.root / 'ausente' / 'git.exe')], capture_output=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.backup.exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'resolução específica do Windows')
+    def test_preview_auto_resolves_desktop_git_and_python_without_path(self):
+        profile = Path(os.environ['USERPROFILE'])
+        if not list((profile / 'AppData/Local/GitHubDesktop').glob('app-*/resources/app/git/cmd/git.exe')):
+            self.skipTest('GitHub Desktop indisponível')
+        if not (profile / 'AppData/Local/Programs/Python/Python312/python.exe').is_file():
+            self.skipTest('Python 3.12 padrão indisponível')
+        powershell = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        env = os.environ.copy()
+        env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
+        env['LOCALAPPDATA'] = str(self.root / 'localappdata-vazio')
+        script = Path(__file__).with_name('Deploy-BrainnetPatch.ps1')
+        result = subprocess.run([str(powershell), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+                                 '-Preview', '-Source', str(self.src), '-Destination', str(self.dst),
+                                 '-BackupRoot', str(self.backup), '-Manifest', str(self.manifest)],
+                                capture_output=True, timeout=30, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+        self.assertIn(b'plan_sha256', result.stdout)
         self.assertFalse(self.backup.exists())
 
     def test_powershell_apply_requires_interactive_confirmation(self):

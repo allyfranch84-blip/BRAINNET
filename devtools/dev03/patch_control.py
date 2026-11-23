@@ -33,6 +33,9 @@ class Refused(RuntimeError):
     pass
 
 
+GIT_EXECUTABLE = None
+
+
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -40,7 +43,7 @@ def sha(data):
 def git(repo, *args):
     env = os.environ.copy()
     env['GIT_OPTIONAL_LOCKS'] = '0'
-    p = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, env=env)
+    p = subprocess.run([GIT_EXECUTABLE or 'git', '-C', str(repo), *args], capture_output=True, env=env)
     if p.returncode:
         raise Refused('Git recusou operação de leitura: ' + ' '.join(args[:2]))
     return p.stdout
@@ -318,10 +321,16 @@ def rollback(backup_root, deployment_id, *, expected_source=None, expected_desti
 
 
 def main():
+    global GIT_EXECUTABLE
     p = argparse.ArgumentParser(); p.add_argument('--source', required=True); p.add_argument('--destination', required=True)
     p.add_argument('--manifest'); p.add_argument('--backup-root', required=True); p.add_argument('--apply', action='store_true')
-    p.add_argument('--plan-hash'); p.add_argument('--rollback'); args = p.parse_args()
+    p.add_argument('--plan-hash'); p.add_argument('--rollback'); p.add_argument('--git-executable'); args = p.parse_args()
     try:
+        if args.git_executable:
+            executable = Path(args.git_executable)
+            if not executable.is_absolute() or not executable.is_file():
+                raise Refused('Executável Git informado não é um arquivo absoluto existente')
+            GIT_EXECUTABLE = str(executable)
         source = Path(args.source).resolve(strict=True)
         destination = Path(args.destination).resolve(strict=True)
         backup = Path(args.backup_root).resolve(strict=False)
