@@ -12,31 +12,41 @@ def bridge_with(context, scan):
     return bridge
 
 
-def test_real_handler_missing_window_and_provider_exception():
+def test_chat_refuses_implicit_foreground_and_unavailable_scanner():
+    foreground = Mock(return_value={'hwnd': 999, 'pid': 99})
     scan = Mock()
-    bridge = bridge_with(Mock(return_value={'hwnd': 0}), scan)
-    assert bridge.send_command('/uia scan')['status'] == 'UNAVAILABLE'
+    bridge = bridge_with(foreground, scan)
+    assert bridge.send_command('/uia scan')['status'] == 'TARGET_REQUIRED'
+    foreground.assert_not_called()
     scan.assert_not_called()
-    bridge = bridge_with(Mock(return_value={'hwnd': 42, 'pid': 20}), Mock(side_effect=OSError('fake')))
-    assert bridge.send_command('/uia scan')['status'] == 'UNAVAILABLE'
+    bridge._kernel.eye = None
+    assert bridge.send_command('/uia scan 42 20')['status'] == 'UNAVAILABLE'
 
 
-def test_characterizes_existing_empty_list_false_observed():
-    bridge = bridge_with(Mock(return_value={'hwnd': 42, 'pid': 20}), Mock(return_value=[]))
-    result = bridge.send_command('/uia scan')
-    # Characterization of a known defect: OBSERVED does not prove UIA evidence.
-    assert result['status'] == 'OBSERVED' and result['controls'] == []
-    assert 'lista vazia' in result['reply']
+def test_chat_empty_list_never_claims_observed():
+    window = {'pid': 20, 'started': 123.0, 'rect': (0, 0, 100, 100)}
+    bridge = bridge_with(Mock(), Mock(return_value=[]))
+    with patch('uia_chat_readonly.inspect_window', return_value=window), patch('perception_eye.HAS_UIA_NATIVE', True):
+        result = bridge.send_command('/uia scan 42 20')
+    assert result['status'] == 'EMPTY_OR_PROVIDER_UNAVAILABLE' and result['control_count'] == 0
+    assert 'Nenhuma observação confirmada' in result['reply']
 
 
-def test_characterizes_focus_captured_once_and_reply_omits_details():
-    context = Mock(side_effect=[{'hwnd': 42, 'pid': 20}, {'hwnd': 99, 'pid': 30}])
-    scan = Mock(return_value=[{'name': 'TESTE A', 'control_type': 'ButtonControl', 'rect': None}])
-    result = bridge_with(context, scan).send_command('/uia scan')
-    assert context.call_count == 1
+def test_chat_explicit_window_revalidates_and_redacts_names():
+    window = {'pid': 20, 'started': 123.0, 'rect': (0, 0, 100, 100)}
+    foreground = Mock(return_value={'hwnd': 999, 'pid': 99})
+    scan = Mock(return_value=[{'name': 'CONFIDENCIAL', 'control_type': 'ButtonControl', 'rect': None}])
+    bridge = bridge_with(foreground, scan)
+    with patch('uia_chat_readonly.inspect_window', return_value=window) as check, patch('perception_eye.HAS_UIA_NATIVE', True):
+        result = bridge.send_command('/uia scan 42 20')
+    assert foreground.call_count == 0
+    assert check.call_count == 2
     scan.assert_called_once_with(42, max_controls=100)
-    assert result['controls'][0]['name'] == 'TESTE A'
-    assert 'TESTE A' not in result['reply'] and '42' not in result['reply']
+    assert result['status'] == 'OBSERVED'
+    assert result['control_count'] == 1
+    assert result['types'][0]['type'] == 'ButtonControl'
+    assert 'CONFIDENCIAL' not in str(result)
+    assert '42' in result['reply']
 
 
 def test_diagnostic_distinguishes_missing_target_provider_empty_and_error():
