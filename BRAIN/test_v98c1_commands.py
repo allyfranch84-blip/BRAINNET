@@ -42,10 +42,15 @@ class CommandsModesTests(unittest.TestCase):
    r=self.b.send_command('/modelo listar')
   self.assertEqual(r['status'],'UNAVAILABLE');self.assertIn('Ollama indisponível',r['reply'])
  def test_manual_uia_and_vision_use_existing_methods(self):
-  eye=Mock();eye.scan_uia_properties.return_value=[{'name':'Teste'}];self.b._kernel.eye=eye
-  self.b._kernel.context_engine=SimpleNamespace(capture_foreground_context=lambda:{'hwnd':42})
+  eye=Mock();eye.scan_uia_properties.return_value=[{'name':'Segredo','control_type':'ButtonControl'}];self.b._kernel.eye=eye
+  self.b._kernel.context_engine=SimpleNamespace(capture_foreground_context=Mock())
   self.b._kernel.vision=SimpleNamespace(descrever_tela=Mock(return_value='Descrição simulada'))
-  self.assertEqual(self.b.send_command('/uia scan')['status'],'OBSERVED');eye.scan_uia_properties.assert_called_once_with(42,max_controls=100)
+  self.assertEqual(self.b.send_command('/uia scan')['status'],'TARGET_REQUIRED')
+  with patch('uia_chat_readonly.inspect_window',return_value={'pid':20,'started':123.0,'rect':(0,0,100,100)}),patch('perception_eye.HAS_UIA_NATIVE',True):
+   observed=self.b.send_command('/uia scan 42 20')
+  self.assertEqual(observed['status'],'OBSERVED');eye.scan_uia_properties.assert_called_once_with(42,max_controls=100)
+  self.assertNotIn('Segredo',str(observed))
+  self.b._kernel.context_engine.capture_foreground_context.assert_not_called()
   self.assertEqual(self.b.send_command('/visao agora')['status'],'OBSERVATION_UNVERIFIED')
  def test_motor_ambiguous_and_exact_never_dispatch(self):
   self.b._kernel.bridge=Mock()

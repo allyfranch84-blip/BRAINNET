@@ -698,15 +698,20 @@ class BrainnetBridge:
                 return {'reply':str(description), 'logs':[], 'status':'OBSERVATION_UNVERIFIED'}
             except Exception as exc:
                 return {'reply':f'Visão indisponível: falha de captura ou modelo ({type(exc).__name__}).', 'logs':[], 'status':'UNAVAILABLE'}
-        if normalized == '/uia scan':
-            eye, context = getattr(self._kernel, 'eye', None), getattr(self._kernel, 'context_engine', None)
-            if not callable(getattr(eye, 'scan_uia_properties', None)) or not callable(getattr(context, 'capture_foreground_context', None)):
-                return {'reply':'UIA indisponível: percepção ou captura de janela não conectada.', 'logs':[], 'status':'UNAVAILABLE'}
+        if normalized == '/uia scan' or normalized.startswith('/uia scan '):
+            # Explicit external window only: foreground could be our PyWebView.
+            target = re.fullmatch(r'/uia scan\s+([0-9]+)\s+([0-9]+)', normalized)
+            if target is None:
+                return {'reply':'Indique uma janela externa: /uia scan <HWND> <PID>. Não usamos automaticamente a janela em foco.', 'logs':[], 'status':'TARGET_REQUIRED'}
+            eye = getattr(self._kernel, 'eye', None)
+            if not callable(getattr(eye, 'scan_uia_properties', None)):
+                return {'reply':'UIA indisponível: percepção não conectada.', 'logs':[], 'status':'UNAVAILABLE'}
             try:
-                hwnd = context.capture_foreground_context().get('hwnd')
-                if not hwnd: return {'reply':'UIA indisponível: janela ativa não identificada.', 'logs':[], 'status':'UNAVAILABLE'}
-                controls = eye.scan_uia_properties(hwnd, max_controls=100)
-                return {'reply':f'UIA: {len(controls)} controles retornados; lista vazia também pode indicar provedor indisponível.', 'logs':[], 'status':'OBSERVED', 'controls':controls}
+                from perception_eye import HAS_UIA_NATIVE
+                from uia_chat_readonly import scan_explicit_window, chat_reply
+                result = scan_explicit_window(int(target.group(1)), int(target.group(2)),
+                                              scanner=eye.scan_uia_properties, provider_available=HAS_UIA_NATIVE)
+                return {'reply':chat_reply(result), 'logs':[], **result}
             except Exception as exc:
                 return {'reply':f'UIA indisponível ({type(exc).__name__}).', 'logs':[], 'status':'UNAVAILABLE'}
         return None
