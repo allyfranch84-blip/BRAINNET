@@ -124,3 +124,45 @@ def test_failed_dispatch_and_observation_never_claim_success():
     with patch.object(VirtualMotor, 'move', lambda self, dx, dy: None):
         assert call(b, t, op, m, e)['status'] == 'VERIFICATION_FAILED'
     assert t.task_state == 'FAILED'
+
+
+def test_deadline_during_virtual_dispatch_is_inconclusive():
+    b, t, op, m, e = setup_case()
+    original = VirtualMotor.move
+    def expire_after_move(self, dx, dy):
+        original(self, dx, dy)
+        t._operations[op]['deadline_monotonic'] = time.monotonic() - 1
+    with patch.object(VirtualMotor, 'move', expire_after_move):
+        result = call(b, t, op, m, e)
+    assert result['status'] == 'INCONCLUSIVE' and t.task_state == 'INCONCLUSIVE'
+    assert m.dispatch_count == 1
+
+
+def test_cancel_waits_for_blocked_virtual_dispatch_not_physical_cancellation():
+    b, t, op, m, e = setup_case()
+    started, release, cancel_started, cancel_finished = (threading.Event() for _ in range(4))
+    original = VirtualMotor.move
+    def stalled_move(self, dx, dy):
+        started.set()
+        if not release.wait(3):
+            raise RuntimeError('test synchronization timeout')
+        original(self, dx, dy)
+    def cancel():
+        cancel_started.set()
+        try:
+            return call(b, t, op, m, e, 'cancel')
+        finally:
+            cancel_finished.set()
+    with patch.object(VirtualMotor, 'move', stalled_move):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            approved = pool.submit(call, b, t, op, m, e)
+            assert started.wait(3)
+            cancelled = pool.submit(cancel)
+            assert cancel_started.wait(3)
+            try:
+                assert not cancel_finished.wait(0.1)
+            finally:
+                release.set()
+            assert approved.result(timeout=3)['status'] == 'SUCCEEDED'
+            assert cancelled.result(timeout=3)['status'] == 'REJECTED'
+    assert m.dispatch_count == 1

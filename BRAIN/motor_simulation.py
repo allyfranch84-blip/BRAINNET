@@ -1,4 +1,18 @@
-"""Explicitly virtual motor fixture; never accesses an OS actuator or screen."""
+"""Explicitly virtual motor fixture; never accesses an OS actuator or screen.
+
+This is a deterministic fixture, not independent observation of a physical
+screen. Its task lock intentionally spans the fake move and observation:
+concurrent cancellation must wait for those calls to return. Never reuse that
+locking contract for physical, slow, or blocking operations. Expired pending
+tasks are checked when resumed, but no automatic expiry/reaper is provided.
+
+Safe-full environment limitation: test_inference_backend.py::
+TestSupervisorAddendum::test_absent_gpu_counter_is_unknown loads
+../llama_cpp_independent/b12255/benchmark_003c1.py. The benchmark is excluded
+from the Git snapshot; the test reproducibly fails with FileNotFoundError in
+the Git copy and passes in the operational tree where the file is present.
+That failure occurs before GPU or virtual-motor behavior is tested.
+"""
 
 
 class VirtualMotor:
