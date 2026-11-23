@@ -8,7 +8,7 @@ COMMANDS = (
  ('Modelos','/modo auto | fast | balanced | deep','Define orçamento cognitivo das próximas tarefas.','disponível','configuração gravável','não'),
  ('Modelos','/modo livre | padrao | status','Seleciona ou consulta estilo conversacional; não altera pesos nem permissões.','experimental','configuração gravável','não'),
  ('Visão','/visao agora','Solicita descrição da tela pelo caminho visual existente.','experimental','visão, captura e modelo visual','não para leitura'),
- ('Visão','/uia scan','Lista controles UIA da janela ativa.','experimental','janela ativa e UIA','não para leitura'),
+ ('Visão','/uia scan <HWND> <PID>','Resume controles UIA de janela externa explícita; sem texto privado.','experimental','HWND/PID e UIA','não para leitura'),
  ('Controle','clique / pinte / desenhe ...','Solicita interação visual em linguagem natural; execução e verificação seguem contratos existentes.','experimental','UI-TARS e atuador','sim'),
  ('Memória','/offline <termo>','Consulta um ZIM local; com vários use /offline arquivo.zim :: termo. Fontes não verificadas.','experimental','libzim e ZIM local','não'),
  ('Memória','/offline-ref <id>','Reabre uma fonte registrada no H-Mem.','experimental','H-Mem e ZIM original','não'),
@@ -30,7 +30,7 @@ def render_help(kernel=None):
         lines.append('\n**'+category+'**')
         for cat,syntax,desc,state,deps,auth in COMMANDS:
             if cat==category:
-                required = {'/visao agora':'vision', '/uia scan':'eye',
+                required = {'/visao agora':'vision', '/uia scan <HWND> <PID>':'eye',
                             'clique / pinte / desenhe ...':'ui_protocol'}.get(syntax)
                 if syntax.startswith('/treino '): required = 'harvester'
                 if syntax.startswith('/rem '): required = 'rem_engine'
