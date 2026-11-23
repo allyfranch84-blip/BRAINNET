@@ -399,6 +399,11 @@ class BrainnetKernel:
 # ------------------------------------------------------------------------------
 
 class BrainnetBridge:
+    def _resume_motor_simulation(self, task_id, operation_id, decision, evidence, motor):
+        """Internal test-only path; cannot authorize or dispatch physical actions."""
+        from motor_simulation import resume
+        return resume(self, task_id, operation_id, decision, evidence, motor)
+
     def __init__(self, kernel: BrainnetKernel) -> None:
         self._kernel = kernel
         self._window: Optional[webview.Window] = None
