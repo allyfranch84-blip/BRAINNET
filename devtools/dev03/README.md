@@ -1,6 +1,6 @@
 # DEV-03 — implantação controlada de patches
 
-O projeto operacional fica em `A:\BRAINNET`. A cópia Git fica em `A:\BRAINNET\BRAINNET`; atualizar a cópia Git não instala nada na pasta operacional. A ferramenta é opt-in. O modo padrão é prévia, sem alterações no destino e sem início/encerramento de serviços.
+O projeto operacional fica em `A:\BRAINNET`. A cópia Git fica em `A:\BRAINNET\BRAINNET`; atualizar a cópia Git não instala nada na pasta operacional. A ferramenta é opt-in. O modo padrão é prévia, sem alterações no destino e sem início/encerramento de serviços. **Aplicação e rollback em destinos reais estão desativados no código** até que a proteção contra junctions/reparse points seja validada em ambiente Windows apropriado e revisada; só são permitidos destinos temporários de teste.
 
 ## Três estágios
 
@@ -33,7 +33,7 @@ $tool = 'A:\BRAINNET\BRAINNET\devtools\dev03\Deploy-BrainnetPatch.ps1'
 & $tool -Preview -Manifest 'A:\BRAINNET\BRAIN\development_logs\manifesto_aprovado.json'
 ```
 
-A prévia informa arquivos, hashes atuais e novos, conflitos e hash da prévia. Após **nova aprovação explícita do usuário** para aqueles arquivos e aquele hash:
+A prévia informa arquivos, hashes atuais e novos, conflitos e hash da prévia. O seguinte comando está documentado para o futuro, mas será recusado para o destino real enquanto o bloqueio de segurança estiver ativo. Depois da validação de junctions e de **nova aprovação explícita do usuário** para aqueles arquivos e aquele hash:
 
 ```powershell
 & $tool -Apply -Manifest 'A:\BRAINNET\BRAIN\development_logs\manifesto_aprovado.json' -PlanHash '<hash integral da prévia>'

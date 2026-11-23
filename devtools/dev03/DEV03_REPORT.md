@@ -7,3 +7,9 @@ A ferramenta valida manifestos explícitos contra base e commit Git, fonte limpa
 Teste em árvores temporárias: `python -m unittest -v test_patch_control`: **15 aprovados e 1 ignorado, 0 falhas**, em 53,725 s. Cobertos prévia PowerShell, confirmação negada, inclusão e modificação, nomes Unicode, conflitos, hash, proteções, divergência de caixa, processos simulados, falha parcial, rollback e corrupção de backup. A criação de junction real foi ignorada por indisponibilidade de permissão; a detecção do atributo de reanálise foi testada simuladamente. O fluxo PowerShell `-Apply` completo com confirmação positiva e o detector real de processos não foram executados no ambiente operacional.
 
 O teste motor virtual da issue #2 não prova movimento real nem foi implantado por esta tarefa. Nenhum resultado deste relatório demonstra funcionamento operacional real. Ver instruções e advertência sobre `taskkill` no README; a primeira implantação depende de revisão de manifesto/prévia e consentimento explícito.
+
+## Revisão de segurança posterior
+
+Uma tentativa adicional de criar junction em diretório temporário falhou com `Acesso negado`. O comportamento de junction real continua não verificado e permanece o risco de substituição concorrente entre verificações de caminho e escrita. Por isso, aplicação e rollback fora do diretório temporário estão explicitamente desativados no código, independentemente de confirmação. Esse bloqueio não deve ser removido sem validação Windows apropriada e revisão de segurança.
+
+Reexecução após o bloqueio: 16 testes aprovados, 1 ignorado e 0 falhas (59,632 s). O bloqueio do caminho operacional também foi testado com o diretório temporário adulterado.

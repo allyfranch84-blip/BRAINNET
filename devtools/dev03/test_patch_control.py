@@ -104,6 +104,18 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaises(pc.Refused): pc.apply_plan(p, p['plan_sha256'], self.backup, process_check=lambda: '[{"Name":"node"}]')
         self.assertFalse(self.backup.exists())
 
+    def test_operational_deployment_is_hard_disabled(self):
+        with self.assertRaisesRegex(pc.Refused, 'DESATIVADO'):
+            pc.require_temporary_destination(Path(r'A:\BRAINNET'))
+        with patch.object(pc.tempfile, 'gettempdir', return_value='A:\\'):
+            with self.assertRaisesRegex(pc.Refused, 'DESATIVADO'):
+                pc.require_temporary_destination(Path(r'A:\BRAINNET'))
+        p = self.plan()
+        p['destination'] = r'A:\BRAINNET'
+        with self.assertRaisesRegex(pc.Refused, 'DESATIVADO'):
+            pc.apply_plan(p, p['plan_sha256'], self.backup, process_check=self.idle)
+        self.assertFalse(self.backup.exists())
+
     @unittest.skipUnless(os.name == 'nt', 'coleta específica do Windows')
     def test_process_collector_fails_closed_and_ignores_itself(self):
         with patch.object(pc.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=b'[]')) as run:

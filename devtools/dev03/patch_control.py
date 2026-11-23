@@ -207,7 +207,17 @@ def atomic_write(path, data):
         temp.unlink(missing_ok=True)
 
 
+def require_temporary_destination(destination):
+    """Hard gate: real deployment remains disabled until reparse risks are validated."""
+    destination = Path(destination).resolve(strict=False)
+    temporary = Path(tempfile.gettempdir()).resolve(strict=True)
+    operational = Path(r'A:\BRAINNET').resolve(strict=False)
+    if destination.is_relative_to(operational) or destination == temporary or not destination.is_relative_to(temporary):
+        raise Refused('Implantação/rollback real DESATIVADO: proteção de junctions/reparse ainda não validada')
+
+
 def apply_plan(p, approved_hash, backup_root, *, process_check=active_processes):
+    require_temporary_destination(p['destination'])
     if approved_hash != p['plan_sha256']:
         raise Refused('Hash da prévia aprovada não corresponde')
     if any(x['conflict'] for x in p['files']):
@@ -268,6 +278,7 @@ def rollback(backup_root, deployment_id, *, expected_source=None, expected_desti
     if processes and processes not in ('[]', 'null'):
         raise Refused('Processos relevantes ativos: ' + processes)
     src, dest = Path(journal['plan']['source']), Path(journal['plan']['destination'])
+    require_temporary_destination(dest)
     if ((expected_source is not None and src.resolve() != Path(expected_source).resolve()) or
             (expected_destination is not None and dest.resolve() != Path(expected_destination).resolve())):
         raise Refused('As raízes do manifesto de rollback não correspondem ao destino solicitado')
