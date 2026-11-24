@@ -467,6 +467,7 @@ class BrainnetBridge:
         self._p4_lock = threading.Lock()
         self._p4_pending = {}
         self._motor_plan_cache = {}
+        self._semantic_sequence_lock = threading.Lock()
         self._last_motor_direction = None
         self._ui_motor_window = None
         from contextual_grounder import ContextualGrounder
@@ -967,7 +968,12 @@ class BrainnetBridge:
                     'active_workers': active_workers, 'direct_move_enabled': direct}
         if (getattr(self._kernel, 'minimal_mode', False)
                 and os.getenv('BRAINNET_MOTOR_SEMANTIC') == '1' and not prompt_raw.startswith('/')):
-            return self._execute_semantic_motor(prompt_raw)
+            if not self._semantic_sequence_lock.acquire(blocking=False):
+                return {'status':'BUSY','reply':'Uma tarefa motora já está em execução.','logs':[],'dispatched':False}
+            try:
+                return self._execute_semantic_motor(prompt_raw)
+            finally:
+                self._semantic_sequence_lock.release()
         if getattr(self._kernel, 'minimal_mode', False) and not (p_norm.startswith('/uia scan') or parse_supervised_mouse_move(prompt_raw)):
             return {'reply': 'Capacidade indisponível no perfil mínimo experimental.', 'logs': [], 'status': 'UNAVAILABLE'}
         manual = self._manual_capability_command(prompt_raw, p_norm)
@@ -2268,6 +2274,84 @@ class BrainnetBridge:
             reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
                      else 'Não identifiquei uma ordem motora explícita.')
             return {'status':'UNAVAILABLE','reply':reply,'logs':[], 'dispatched':False}
+        special={'open_app','move_to','click_target','inspect_monitor'}
+        if len(plan['steps'])>1 and any(s['action'] in special for s in plan['steps']):
+            return self._execute_motor_sequence(plan,budget,initial,ui_window,ui_foreground,present,source,source_label)
+        return self._execute_motor_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
+
+    def _execute_motor_sequence(self, plan, budget, initial, ui_window, ui_foreground, present, source, source_label):
+        """Execute heterogeneous subplans under one task and one cancellation token."""
+        from motor_sequence import execute_sequence
+        from capability_lab import observe_physical_monitor
+        from ui_motor_context import stable_foreground, activate_selected_window, same_window
+        from adaptive_resource_controller import BudgetExhausted
+        import win32gui
+
+        selected=ui_window
+        baseline=initial
+        focus=ui_foreground
+        last_target=None
+        def run(group, previous):
+            nonlocal selected,baseline,focus,last_target
+            budget.check_active()
+            current_focus=stable_foreground(deadline=budget.deadline_monotonic)
+            current=observe_physical_monitor()
+            action=group[0]['action']
+            if previous and action!='inspect_monitor':
+                if current_focus!=focus or any(current.get(k)!=baseline.get(k) for k in ('status','cursor','monitor','monitor_rect','coordinate_space')):
+                    return {'status':'ACTION_BLOCKED','reply':'Foco ou cursor alterado entre etapas.','dispatched':False}
+            # "Clique nele" after a named move must use the target again, not bypass
+            # the target verification via an unqualified current-cursor click.
+            if last_target is not None and action=='click' and len(group)==1:
+                group=[{**group[0],'action':'click_target','target':last_target['target'],
+                        **({'app':last_target['app']} if 'app' in last_target else {})}]
+                action='click_target'
+            if previous and action in ('move','click','scroll') and selected is not None and not same_window(selected,foreground=True):
+                return {'status':'ACTION_BLOCKED','reply':'A janela selecionada não está em primeiro plano para a próxima ação.','dispatched':False}
+            # Preserve original pre-inference baseline for the first raw action.
+            sub_initial=baseline if not previous else current
+            result=self._execute_motor_plan({'status':'execute','steps':group},budget,sub_initial,selected,
+                                            focus,present,source,source_label,key=None)
+            if action=='open_app' and result.get('status')=='EFFECT_VERIFIED':
+                prior=selected
+                with self._p4_lock:
+                    selected=self._ui_motor_window
+                current_focus=stable_foreground(deadline=budget.deadline_monotonic)
+                if selected is None or current_focus not in (focus,selected['hwnd']):
+                    return {**result,'status':'GOAL_UNVERIFIED','reply':result['reply']+' Foco alterado de forma inesperada; sequência interrompida.'}
+                # Activate the verified app before continuing; no mouse click required.
+                ready=activate_selected_window(selected,current_focus,deadline=budget.deadline_monotonic,
+                                                previous_window=prior if previous else None)
+                if ready['status']!='READY':
+                    return {**result,'status':'GOAL_UNVERIFIED','reply':result['reply']+' Foco não confirmado: '+ready['code']}
+            elif action in ('move_to','click_target') and result.get('status') in ('EFFECT_VERIFIED','INPUT_SENT'):
+                with self._p4_lock:
+                    selected=self._ui_motor_window or selected
+            last_target=group[0] if action=='move_to' and result.get('status')=='EFFECT_VERIFIED' else None
+            # Refresh between subplans, never use the original coordinates after an app change.
+            baseline=observe_physical_monitor()
+            observed_focus=stable_foreground(deadline=budget.deadline_monotonic)
+            if action in ('move','click','scroll','inspect_monitor') and observed_focus!=current_focus:
+                # Do not treat a focus-changing click as authority to continue in an arbitrary window.
+                if result.get('status') in ('EFFECT_VERIFIED','INPUT_SENT','OBSERVED'):
+                    result={**result,'status':'EFFECT_UNVERIFIED','reply':result['reply']+' Foco mudou; sequência interrompida.'}
+            focus=observed_focus
+            return result
+        outcome=execute_sequence(plan,run,check_active=budget.check_active)
+        logger.info('[MOTOR_SEQUENCE] task_id=%s status=%s completed=%s total=%s',budget.task_id,outcome['status'],outcome['completed_steps'],outcome['total_steps'])
+        return {**outcome,'motor_source':source,'logs':[]}
+
+    def _execute_motor_plan(self, plan, budget, initial, ui_window, ui_foreground, present, source, source_label, *, key):
+        """Existing validated motor executor; no language inference in this layer."""
+        from capability_lab import observe_physical_monitor, observe_cursor_monitors
+        from motor_intent import resolve_move, MAX_DISTANCE
+        from execution_authority import PhysicalMoveProposal, PhysicalMoveApproval, authorization_scope
+
+        def observed(value):
+            return value.get('status')=='OBSERVED' and value.get('coordinate_space')=='PHYSICAL'
+        def same_context(a,b):
+            return observed(a) and observed(b) and all(a.get(k)==b.get(k) for k in ('cursor','monitor','monitor_rect'))
+
         if plan['steps'][0]['action']=='inspect_monitor':
             from perceptual_present import describe_monitor
             outcome=describe_monitor(present.snapshot() if present is not None else {},plan['steps'][0]['monitor'])
@@ -2358,6 +2442,9 @@ class BrainnetBridge:
                     if outcome.get('ocr_similar'):
                         reply += ' Textos semelhantes: ' + ', '.join(outcome['ocr_similar'])
                     reply += ' Consulte /ui controls.'
+            if status in ('EFFECT_VERIFIED','INPUT_SENT'):
+                with self._p4_lock:
+                    self._ui_motor_window=ui_window
             logger.info('[UI_MOTOR] task_id=%s status=%s code=%s waypoints=%s',budget.task_id,status,code,outcome.get('waypoints'))
             return {'status':status,'code':code,'reply':reply + f' Origem: {source_label}.','logs':[],
                     'dispatched':outcome.get('dispatched'), 'motor_results':[outcome],'motor_source':source}
@@ -2432,9 +2519,9 @@ class BrainnetBridge:
         if all_moves:
             with self._p4_lock:
                 self._last_motor_direction = previous
-                if len(self._motor_plan_cache) >= 64:
-                    self._motor_plan_cache.pop(next(iter(self._motor_plan_cache)))
-                if source != 'BUILTIN_VERIFIED_CAPABILITY':
+                if key is not None and source != 'BUILTIN_VERIFIED_CAPABILITY':
+                    if len(self._motor_plan_cache) >= 64:
+                        self._motor_plan_cache.pop(next(iter(self._motor_plan_cache)))
                     self._motor_plan_cache[key] = plan
         logger.info('[MOTOR] task_id=%s source=%s steps=%s all_moves_verified=%s', budget.task_id, source, len(evidence), all_moves)
         if all_moves:
