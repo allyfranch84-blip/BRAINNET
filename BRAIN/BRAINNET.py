@@ -826,6 +826,10 @@ class BrainnetBridge:
                 self._ui_motor_window = found['window']
             window = found['window']
             return {'status':'BOUND','reply':f"Contexto: {window['app']}, HWND {window['hwnd']}, PID {window['pid']}. Use /ui controls para observar os controles.",'logs':[]}
+        if p_norm == '/checkup /context':
+            check=self._send_command_impl('/checkup')
+            context=self._send_command_impl('/context')
+            return {'status':context['status'],'reply':check['reply']+'\n\n'+context['reply'],'logs':[]}
         if p_norm == '/checkup':
             from pathlib import Path
             import psutil
@@ -863,6 +867,13 @@ class BrainnetBridge:
                 lines.append('Diretório de habilidades indisponível.')
             lines.append(f"Janelas no presente: {len(state.get('windows',[]))}; canais: " + ', '.join(f"{n}={s['status']}" for n,s in state.get('channels',{}).items()))
             return {'status':'OBSERVED','reply':'\n'.join(lines),'logs':[]}
+        if p_norm.startswith('/monitor '):
+            from perceptual_present import describe_monitor
+            number=prompt_raw[len('/monitor '):].strip()
+            if not number.isdecimal() or len(number)>2 or not 1<=int(number)<=32:
+                return {'status':'TARGET_REQUIRED','reply':'Use /monitor 1 ou /monitor 2.','logs':[]}
+            present=getattr(self._kernel,'perceptual_present',None)
+            return {**describe_monitor(present.snapshot() if present else {},int(number)),'logs':[],'dispatched':False}
         if p_norm in ('/context','/ui world'):
             present=getattr(self._kernel,'perceptual_present',None)
             if present is None:
@@ -2257,6 +2268,10 @@ class BrainnetBridge:
             reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
                      else 'Não identifiquei uma ordem motora explícita.')
             return {'status':'UNAVAILABLE','reply':reply,'logs':[], 'dispatched':False}
+        if plan['steps'][0]['action']=='inspect_monitor':
+            from perceptual_present import describe_monitor
+            outcome=describe_monitor(present.snapshot() if present is not None else {},plan['steps'][0]['monitor'])
+            return {**outcome,'logs':[],'dispatched':False}
         if plan['steps'][0]['action']=='open_app':
             from ui_motor_context import open_application
             app=plan['steps'][0]['target']
