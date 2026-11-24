@@ -20,15 +20,15 @@ Vocabulário:
 {"action":"click","button":"left|right|middle","count":1}
 {"action":"scroll","direction":"up|down","count":1}
 {"action":"open_app","target":"paint|notepad|calculator"}
+{"action":"inspect_monitor","monitor":2}
 {"action":"move_to","target":"nome do controle"}
 {"action":"click_target","target":"nome do controle","button":"left|right|middle","count":1}
-Movimentos usam pixels relativos (1 a 150 por passo); distância não especificada: 150.
-Para deslocamentos maiores, decomponha em passos de até 150 pixels, no máximo 8 passos.
+Movimentos usam pixels relativos (1 a 1200 por pedido de movimento); distância não especificada: 150. O executor divide distâncias maiores em segmentos físicos. Não reduza a distância solicitada. Máximo de oito segmentos físicos no total.
 Use any obrigatoriamente quando o usuário delegar a direção (qualquer direção, direção aleatória); nunca escolha right por conta própria.
 Clique ou role na posição atual somente quando essa intenção for explícita; clique simples
 sem alvo pode usar o cursor atual se o pedido for claramente uma ordem de clique.
 Nunca transforme perguntas, exemplos, citações, negações, instruções para explicar,
-pedidos de implementação ou descrições de código em ações. Retorne none.
+pedidos de implementação ou descrições de código em ações. Retorne none. Exceção somente de leitura: perguntas sobre o que há em um monitor identificado usam inspect_monitor com número inteiro do DISPLAY, sem movimento ou clique.
 Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada ou o contexto externo recente, nunca invente coordenadas. Se a ordem nomear explicitamente um aplicativo, acrescente o campo opcional app ao passo move_to ou click_target, contendo apenas o nome desse aplicativo; nunca acrescente app por suposição. Nesta versão, um plano com alvo nomeado deve ter exatamente uma etapa; não misture outras ações. Para abrir Paint, Bloco de Notas ou Calculadora, use open_app com o identificador canônico paint, notepad ou calculator; apenas uma etapa. Outros aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
 Não invente passos, alvos ou cliques. Use no máximo 8 passos.
 Preserve quantidades de rolagem: cada vez, incremento ou notch pedido corresponde a uma unidade de count; o executor enviará eventos separados. Se uma quantidade não couber no limite, retorne unsupported, não a reduza.
@@ -41,6 +41,9 @@ Exemplos:
 "role cinco incrementos para cima" -> {"status":"execute","steps":[{"action":"scroll","direction":"up","count":5}]}
 "abra o paint" -> {"status":"execute","steps":[{"action":"open_app","target":"paint"}]}
 "abra o bloco de notas" -> {"status":"execute","steps":[{"action":"open_app","target":"notepad"}]}
+"o que está no monitor 2?" -> {"status":"execute","steps":[{"action":"inspect_monitor","monitor":2}]}
+"mova o mouse para cima 300 pixels" -> {"status":"execute","steps":[{"action":"move","direction":"up","distance":300}]}
+"desenhe um quadrado no paint" -> {"status":"unsupported","steps":[]}
 "como mover o mouse?" -> {"status":"none","steps":[]}
 "mova o mouse até o botão salvar" -> {"status":"execute","steps":[{"action":"move_to","target":"Salvar"}]}
 "clique com o direito no botão Editar" -> {"status":"execute","steps":[{"action":"click_target","target":"Editar","button":"right","count":1}]}
@@ -69,6 +72,9 @@ def validate_plan(value):
                     or type(step['distance']) is not int
                     or not 1 <= step['distance'] <= MAX_DISTANCE):
                 raise ValueError('invalid relative movement')
+        elif action == 'inspect_monitor':
+            if len(steps)!=1 or set(step)!={'action','monitor'} or type(step['monitor']) is not int or not 1<=step['monitor']<=32:
+                raise ValueError('invalid monitor observation')
         elif action == 'open_app':
             if len(steps)!=1 or set(step)!={'action','target'} or step['target'] not in ('paint','notepad','calculator'):
                 raise ValueError('invalid application target')
@@ -100,7 +106,22 @@ def validate_plan(value):
 
 
 def parse_response(text):
-    return validate_plan(json.loads(text))
+    value=json.loads(text)
+    if isinstance(value,dict) and value.get('status')=='execute' and isinstance(value.get('steps'),list):
+        expanded=[]
+        for step in value['steps']:
+            if (isinstance(step,dict) and set(step)=={'action','direction','distance'}
+                    and step['action']=='move' and step['direction'] in DIRECTIONS
+                    and type(step['distance']) is int and MAX_DISTANCE<step['distance']<=MAX_DISTANCE*MAX_STEPS):
+                distance=step['distance']
+                while distance:
+                    segment=min(distance,MAX_DISTANCE)
+                    expanded.append({**step,'distance':segment})
+                    distance-=segment
+            else:
+                expanded.append(step)
+        value={**value,'steps':expanded}
+    return validate_plan(value)
 
 
 def resolve_move(start, rect, direction, distance, *, previous=None, choose=random.choice):
