@@ -828,7 +828,7 @@ class BrainnetBridge:
                 return {'status':scene['status'],'reply':f"Controles UIA indisponíveis ({scene['status']}).",'logs':[]}
             names = [f"{c['name']} ({c['type'].removesuffix('Control')})" for c in scene['controls']]
             shown = names[:60]
-            return {'status':'OBSERVED','reply':f"{window['app']}: {len(names)} controles nomeados, visíveis e habilitados.\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else ''),'logs':[]}
+            return {'status':'OBSERVED','reply':f"{window['app']}: {len(names)} controles nomeados, visíveis e habilitados (de {scene.get('raw_count',0)} elementos UIA lidos).\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else ''),'logs':[]}
         if p_norm == '/motor status':
             from assistant_prompts import MODELO_PARSER
             from urllib.request import urlopen
@@ -2153,6 +2153,20 @@ class BrainnetBridge:
             reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
                      else 'Não identifiquei uma ordem motora explícita.')
             return {'status':'UNAVAILABLE','reply':reply,'logs':[], 'dispatched':False}
+        if plan['steps'][0]['action']=='open_app':
+            from ui_motor_context import open_application
+            app=plan['steps'][0]['target']
+            try:
+                budget.check_active()
+                outcome=open_application(app,deadline=min(budget.deadline_monotonic,time.monotonic()+12))
+            except Exception as exc:
+                return {'status':'GOAL_UNVERIFIED','reply':f'Abertura de {app} não confirmada ({type(exc).__name__}).','logs':[]}
+            if outcome['status']=='EFFECT_VERIFIED':
+                window=outcome['window']
+                with self._p4_lock:
+                    self._ui_motor_window=window
+                return {'status':'EFFECT_VERIFIED','reply':f"{window['app']} aberto e verificado; contexto definido automaticamente (HWND {window['hwnd']}, PID {window['pid']}). Use /ui controls.",'logs':[],'dispatched':outcome['dispatched']}
+            return {'status':outcome['status'],'reply':f"Abertura de {app}: {outcome['code']}.",'logs':[],'dispatched':outcome['dispatched']}
         if not same_context(initial, observe_physical_monitor()) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
             return {'status':'ACTION_BLOCKED','reply':'Cursor ou desktop mudou durante a interpretação. Nenhuma ação executada.',
                     'logs':[], 'dispatched':False}
@@ -2190,10 +2204,11 @@ class BrainnetBridge:
                 reply = f"Alvo {step['target']}: {code}. Nenhuma nova tentativa automática."
                 if code=='TARGET_OTHER_MONITOR':
                     reply += ' Posicione o cursor no monitor da janela-alvo antes de enviar pelo teclado.'
-                if code=='FOCUS_UNAVAILABLE':
-                    reply += ' O Windows não permitiu ativar a janela selecionada.'
+                if code in ('FOCUS_UNAVAILABLE','FOCUS_CHANGED','FOCUS_NOT_OWNED'):
+                    reply += f" Foco inicial: {outcome.get('expected_focus',ui_foreground)}; atual: {outcome.get('observed_focus')}; janela-alvo: {ui_window['hwnd']}. O foco precisa permanecer na BRAINNET ou na janela selecionada."
+
                 if code in ('TARGET_NOT_FOUND','TARGET_AMBIGUOUS'):
-                    reply += ' Consulte /ui controls e informe o nome exato.'
+                    reply += f" Controles elegíveis: {outcome.get('control_count')}; elementos UIA: {outcome.get('raw_count')}. Consulte /ui controls e informe o nome exato."
             logger.info('[UI_MOTOR] task_id=%s status=%s code=%s waypoints=%s',budget.task_id,status,code,outcome.get('waypoints'))
             return {'status':status,'code':code,'reply':reply + f' Origem: {source_label}.','logs':[],
                     'dispatched':outcome.get('dispatched'), 'motor_results':[outcome],'motor_source':source}
