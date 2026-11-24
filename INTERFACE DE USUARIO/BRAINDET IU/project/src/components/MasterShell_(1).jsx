@@ -137,20 +137,24 @@ const mockApi = {
   async set_window_position(x, y) { await wait(100); return { ok: true }; },
 };
 
+// Simulation is opt-in in a standalone browser; never silently replace a live kernel.
 function useKernel() {
-  const [bridge, setBridge] = useState(() => (window.pywebview?.api ? "pywebview" : "mock"));
+  const demo = new URLSearchParams(window.location.search).get("demo") === "1";
+  const [bridge, setBridge] = useState(() => (window.pywebview?.api ? "pywebview" : demo ? "mock" : "disconnected"));
   useEffect(() => {
-    const onReady = () => setBridge("pywebview");
+    const onReady = () => { if (window.pywebview?.api) setBridge("pywebview"); };
     window.addEventListener("pywebviewready", onReady);
+    onReady();
     return () => window.removeEventListener("pywebviewready", onReady);
   }, []);
   const call = useCallback(async (method, ...args) => {
     const api = window.pywebview?.api;
-    const target = bridge === "pywebview" ? api : mockApi;
+    const target = api || (bridge === "mock" && demo ? mockApi : null);
+    if (!target) return { ok: false, status: "UNAVAILABLE", error: "Ponte real do Kernel indisponível." };
     if (typeof target?.[method] !== 'function') return { ok: false, error: `Método ${method} indisponível` };
     try { return await target[method](...args); }
     catch (err) { console.error(`[kernel] ${method} falhou`, err); return { ok: false, error: String(err) }; }
-  }, [bridge]);
+  }, [bridge, demo]);
   return { call, bridge };
 }
 
@@ -726,7 +730,7 @@ function Home({ groups, messages, logs, theme, onToggleTheme, voice, onNavigate,
                   </div>
                   <div className="text-right">
                     <div className="tabular-nums" style={{ fontFamily: DISPLAY, fontWeight: 200, fontSize: "clamp(34px,4vw,60px)", letterSpacing: "-0.04em", lineHeight: 1 }}>{d.toLocaleTimeString("pt-BR", { hour12: false })}</div>
-                    <div className="mt-1 text-[10px] tracking-[0.2em]" style={{ ...MONO, color: "var(--muted)" }}>{d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).toUpperCase()} · {bridge === "pywebview" ? "KERNEL LINKED" : "MOCK"}</div>
+                    <div className="mt-1 text-[10px] tracking-[0.2em]" style={{ ...MONO, color: "var(--muted)" }}>{d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).toUpperCase()} · {bridge === "pywebview" ? "KERNEL LINKED" : bridge === "mock" ? "MOCK" : "KERNEL OFFLINE"}</div>
                   </div>
                 </div>
 
@@ -988,7 +992,7 @@ function Header({ kernel, theme, onToggleTheme, bridge, title, trail, voiceOn, f
           <motion.span key={title} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={SPRING} className="truncate text-sm font-medium tracking-wide">{title}</motion.span>
         </AnimatePresence>
         <span className="hidden rounded-full px-2 py-0.5 text-[10px] tracking-[0.12em] md:inline" style={{ ...MONO, background: "var(--chip)", color: "var(--cyan)", border: "1px solid var(--edge)" }}>
-          {bridge === "pywebview" ? "core_1 // linked" : "core_1 // mock"}
+          {bridge === "pywebview" ? "core_1 // linked" : bridge === "mock" ? "core_1 // mock" : "core_1 // offline"}
         </span>
       </div>
 
@@ -2044,7 +2048,12 @@ export default function MasterShell() {
     pushMessage({ role: "user", text });
     setIsProcessing(true);
     try {
+      const started = performance.now();
       const res = await kernel.call("send_command", text);
+      const roundtripMs = performance.now() - started;
+      if (res?.task_budget?.task_id && res?.status) {
+        pushLog({ level: "INFO", core: "Kernel", msg: `${res.task_budget.task_id} · ${res.status} · ${roundtripMs.toFixed(1)} ms (GUI)` });
+      }
       if (/^\/(modo|modelo)\b/i.test(text.trim())) {
         const status = await kernel.call('get_conversation_status');
         setConversationStatus(status?.ok ? status : null);
