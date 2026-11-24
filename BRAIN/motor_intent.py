@@ -29,7 +29,7 @@ Clique ou role na posição atual somente quando essa intenção for explícita;
 sem alvo pode usar o cursor atual se o pedido for claramente uma ordem de clique.
 Nunca transforme perguntas, exemplos, citações, negações, instruções para explicar,
 pedidos de implementação ou descrições de código em ações. Retorne none.
-Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada pelo usuário, nunca invente coordenadas. Nesta versão, um plano com alvo nomeado deve ter exatamente uma etapa; não misture outras ações. Para abrir Paint, Bloco de Notas ou Calculadora, use open_app com o identificador canônico paint, notepad ou calculator; apenas uma etapa. Outros aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
+Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada ou o contexto externo recente, nunca invente coordenadas. Se a ordem nomear explicitamente um aplicativo, acrescente o campo opcional app ao passo move_to ou click_target, contendo apenas o nome desse aplicativo; nunca acrescente app por suposição. Nesta versão, um plano com alvo nomeado deve ter exatamente uma etapa; não misture outras ações. Para abrir Paint, Bloco de Notas ou Calculadora, use open_app com o identificador canônico paint, notepad ou calculator; apenas uma etapa. Outros aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
 Não invente passos, alvos ou cliques. Use no máximo 8 passos.
 Preserve quantidades de rolagem: cada vez, incremento ou notch pedido corresponde a uma unidade de count; o executor enviará eventos separados. Se uma quantidade não couber no limite, retorne unsupported, não a reduza.
 Exemplos:
@@ -74,6 +74,10 @@ def validate_plan(value):
                 raise ValueError('invalid application target')
         elif action in ('move_to','click_target'):
             keys = {'action','target'} if action=='move_to' else {'action','target','button','count'}
+            if 'app' in step:
+                if not isinstance(step['app'],str) or not step['app'].strip() or len(step['app'])>120:
+                    raise ValueError('invalid application qualifier')
+                keys.add('app')
             if (len(steps)!=1 or set(step)!=keys or not isinstance(step['target'],str)
                     or not step['target'].strip() or len(step['target'])>160):
                 raise ValueError('invalid named target')
