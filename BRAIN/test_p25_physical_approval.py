@@ -70,3 +70,30 @@ def test_duplicate_authority_cannot_reuse_proposal_id():
  p,a=make();b=PhysicalMoveApproval(p);assert a.approve_explicitly(p.proposal_id);assert b.approve_explicitly(p.proposal_id)
  obs={'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':p.start,'monitor':p.monitor,'monitor_rect':p.monitor_rect}
  assert a.consume(p,obs) and not b.consume(p,obs)
+
+
+def test_timed_physical_segment_visits_intermediate_positions():
+ from dataclasses import replace
+ p,_=make()
+ p=replace(p,duration_ms=300)
+ a=PhysicalMoveApproval(p)
+ assert a.approve_explicitly(p.proposal_id)
+ with patch.object(effector.time,'sleep'):
+  r,f=invoke(p,a)
+ assert r['status']=='EFFECT_VERIFIED' and f.sets==15 and f.pos==p.target
+
+def test_scroll_count_dispatches_separate_native_notches():
+ f=Fake()
+ motor=Mock()
+ motor.mouse_scroll.return_value=True
+ bridge=ActuatorBridge(effector_instance=motor)
+ obs={'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':f.pos,'monitor':'DISPLAY','monitor_rect':(0,0,100,100)}
+ async def direct(fn,*args,**kwargs):return fn(*args,**kwargs)
+ with authorization_scope(threading.Event()),patch.object(effector,'user32',f),patch('capability_lab.observe_physical_monitor',return_value=obs),patch.object(ActuatorBridge,'_complete_physical',side_effect=direct),patch('actuator_bridge.time.sleep'):
+  coro=bridge._route_execution('mouse_cursor_input',{'expected':obs,'step':{'action':'scroll','direction':'down','count':3}})
+  try:coro.send(None)
+  except StopIteration as done:r=done.value
+  else:raise AssertionError('not completed')
+ assert r['status']=='INPUT_SENT' and r['sent_count']==3
+ assert motor.mouse_scroll.call_count==3
+ assert all(call.args==('down',1) for call in motor.mouse_scroll.call_args_list)
