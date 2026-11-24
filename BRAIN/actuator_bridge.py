@@ -348,13 +348,29 @@ class ActuatorBridge:
                         if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (1, 2, 4, 5, 6)):
                             return {'status':'ACTION_BLOCKED','code':'MOUSE_BUTTON_HELD'}
                         require_action_allowed(action)
+                        sent = 0
                         if step['action'] == 'click':
                             ok = self._effector.mouse_click(step['button'], step['count'])
+                            sent = step['count'] if ok is True else None
                         else:
-                            ok = self._effector.mouse_scroll(step['direction'], step['count'])
+                            # Send distinct wheel notches instead of one accumulated delta.
+                            for index in range(step['count']):
+                                if index:
+                                    time.sleep(.18)
+                                require_action_allowed(action)
+                                fresh = observe_physical_monitor()
+                                if (fresh.get('status') != 'OBSERVED' or fresh.get('coordinate_space') != 'PHYSICAL'
+                                        or any(fresh.get(k) != expected.get(k) for k in ('cursor','monitor','monitor_rect'))
+                                        or any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (1,2,4,5,6))):
+                                    break
+                                if self._effector.mouse_scroll(step['direction'], 1) is not True:
+                                    break
+                                sent += 1
+                            ok = sent == step['count']
                         # SendInput acceptance is not proof of the application effect.
                         return {'status':'INPUT_SENT' if ok is True else 'EFFECT_UNVERIFIED',
                                 'code':'INPUT_ACCEPTED' if ok is True else 'INPUT_NOT_CONFIRMED',
+                                'requested_count':step['count'], 'sent_count':sent,
                                 'cursor':current.get('cursor')}
                     return await self._complete_physical(execute_cursor_input)
             # Physical Actuator Layer (Exclusive Lock)
