@@ -6,21 +6,16 @@ SPECIAL=frozenset(('open_app','move_to','click_target','inspect_monitor'))
 
 def groups(steps):
     pending=[]
-    prior_named_move=False
     for step in steps:
-        if step['action'] in SPECIAL:
+        if step['action']=='move':
+            pending.append(step)
+        else:
+            # Reobserve context after each input or named operation; group only
+            # consecutive geometry segments so their full path is preflighted.
             if pending:
                 yield pending
                 pending=[]
             yield [step]
-            prior_named_move=step['action']=='move_to'
-        elif prior_named_move and step['action']=='click':
-            # The kernel re-resolves the named object instead of blindly clicking.
-            yield [step]
-            prior_named_move=False
-        else:
-            pending.append(step)
-            prior_named_move=False
     if pending:
         yield pending
 
