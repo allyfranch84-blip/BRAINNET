@@ -110,6 +110,8 @@ class CognitiveContext:
             for record,_ in reversed(self._events):
                 if record['window'] not in live:
                     continue
+                # Do not revive targets from a prior failed or unconfirmed operation.
+                # Include result status explicitly, never imply authorization.
                 recent.append({'app':record['app'],'steps':deepcopy(record['steps']),
                                'status':record['status'],'effect_verified':record['effect_verified']})
                 if len(recent)>=6:
