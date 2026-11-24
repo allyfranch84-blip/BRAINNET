@@ -34,3 +34,35 @@ def test_empty_and_unavailable_are_distinct(tmp_path):
     setup_hmem(tmp_path)
     r=recall(tmp_path,'paint')
     assert r['status']=='OBSERVED' and not r['matches']
+
+
+def test_fhrr_recovers_lexically_related_forms_without_claiming_meaning(tmp_path):
+    from hyperdimensional import FHRRHyperdimensionalEngine
+    path=tmp_path/'core1_pdag.db'
+    with closing(sqlite3.connect(path)) as conn,conn:
+        conn.execute('CREATE TABLE pdag_nodes (context_key TEXT, intent TEXT, last_active REAL, consecutive_successes INTEGER, pipeline_spec TEXT)')
+        conn.executemany('INSERT INTO pdag_nodes VALUES (?,?,?,?,?)',[
+            ('route','abra o paint',1,1,'{}'),('other','música',2,1,'{}')])
+    before=path.read_bytes()
+    engine=FHRRHyperdimensionalEngine(dimension=10000)
+    assert not recall(tmp_path,'abrir')['matches']
+    outcome=recall(tmp_path,'abrir',engine=engine)
+    assert [r['id'] for r in outcome['matches']]==['route']
+    assert outcome['matches'][0]['match']=='FHRR_LEXICAL_CANDIDATE'
+    assert outcome['matches'][0]['lexical_score']==0
+    assert not outcome['matches'][0]['execution_authorized']
+    assert len(engine._token_cache)==0 and path.read_bytes()==before
+
+def test_transition_lookup_and_diversity(tmp_path):
+    from hyperdimensional import FHRRHyperdimensionalEngine
+    path=tmp_path/'core1_pdag.db'
+    with closing(sqlite3.connect(path)) as conn,conn:
+        conn.execute('CREATE TABLE transitions (id INTEGER PRIMARY KEY, app_name TEXT, intent TEXT, timestamp REAL, steps_json TEXT)')
+        conn.executemany('INSERT INTO transitions VALUES (?,?,?,?,?)',
+            [(i,'mspaint.exe','abra o paint',float(i),'[]') for i in range(1,9)])
+    before=path.read_bytes()
+    result=recall(tmp_path,'paint',engine=FHRRHyperdimensionalEngine(dimension=10000))
+    assert result['candidate_count']==8
+    assert [r['id'] for r in result['matches']]==['8','7','6']
+    assert read_record(tmp_path,'transitions','8')['payload']=='[]'
+    assert path.read_bytes()==before
