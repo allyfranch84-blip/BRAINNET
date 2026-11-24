@@ -29,11 +29,14 @@ pedidos de implementação ou descrições de código em ações. Retorne none.
 Alvos nomeados (botão, objeto, aplicativo), coordenadas absolutas, arrasto,
 digitação e tarefas que misturam ações não suportadas: unsupported para o plano inteiro.
 Não invente passos, alvos ou cliques. Use no máximo 8 passos.
+Preserve quantidades de rolagem: cada vez, incremento ou notch pedido corresponde a uma unidade de count; o executor enviará eventos separados. Se uma quantidade não couber no limite, retorne unsupported, não a reduza.
 Exemplos:
 "mova o mouse em qualquer direção" -> {"status":"execute","steps":[{"action":"move","direction":"any","distance":150}]}
 "desloque o ponteiro para cima" -> {"status":"execute","steps":[{"action":"move","direction":"up","distance":150}]}
 "vá 100 pixels à esquerda e depois 50 para baixo" -> {"status":"execute","steps":[{"action":"move","direction":"left","distance":100},{"action":"move","direction":"down","distance":50}]}
 "clique com o botão direito na posição atual" -> {"status":"execute","steps":[{"action":"click","button":"right","count":1}]}
+"role para baixo três vezes" -> {"status":"execute","steps":[{"action":"scroll","direction":"down","count":3}]}
+"role cinco incrementos para cima" -> {"status":"execute","steps":[{"action":"scroll","direction":"up","count":5}]}
 "como mover o mouse?" -> {"status":"none","steps":[]}
 "mova o mouse até o botão salvar" -> {"status":"unsupported","steps":[]}
 """
