@@ -255,3 +255,101 @@ def open_lab_window():
 
 if __name__ == '__main__':
     open_lab_window()
+
+
+def propose_delegated_move(start, monitor_rect, safe_rect, *, coordinates_verified=False):
+    """Pure proposal only; no cursor read, authorization or motor dispatch."""
+    if coordinates_verified is not True:
+        return {'status': 'ACTION_BLOCKED', 'reason': 'COORDINATE_MISMATCH', 'execution_authorized': False}
+    if (not isinstance(start, (tuple, list)) or len(start) != 2 or
+        not all(isinstance(r, (tuple, list)) and len(r) == 4 for r in (monitor_rect, safe_rect)) or
+        any(type(v) is not int for v in (*start, *monitor_rect, *safe_rect))):
+        return {'status': 'ACTION_BLOCKED', 'reason': 'Geometria inválida', 'execution_authorized': False}
+    def inside(p, rect):
+        return rect[0] <= p[0] < rect[2] and rect[1] <= p[1] < rect[3]
+    if not all(inside(start, rect) for rect in (monitor_rect, safe_rect)):
+        return {'status': 'ACTION_BLOCKED', 'reason': 'Cursor fora da região segura', 'execution_authorized': False}
+    for distance in range(20, 0, -1):
+        for dx, dy in ((distance, 0), (-distance, 0), (0, distance), (0, -distance)):
+            target = (start[0] + dx, start[1] + dy)
+            if all(inside(target, rect) for rect in (monitor_rect, safe_rect)):
+                return {'status': 'PROPOSED', 'start': tuple(start), 'target': target,
+                        'dx': dx, 'dy': dy, 'execution_authorized': False}
+    return {'status': 'ACTION_BLOCKED', 'reason': 'Nenhum deslocamento cabe na região segura', 'execution_authorized': False}
+
+
+def prepare_delegated_observation(task_id, observation, safe_rect, *, deadline_monotonic, clock=None):
+    """Build immutable evidence-bound proposal, without authorizing or dispatching."""
+    import time
+    import math
+    from types import MappingProxyType
+    now = (clock or time.monotonic)()
+    if not isinstance(task_id, str) or not task_id or type(deadline_monotonic) not in (int, float) or not math.isfinite(deadline_monotonic) or deadline_monotonic <= now:
+        return {'status': 'ACTION_BLOCKED', 'reason': 'Tarefa ou prazo inválido'}
+    monitor = observation.get('cursor_monitor') if isinstance(observation, dict) else None
+    if not isinstance(monitor, dict) or observation.get('cursor_status') != 'OK' or observation.get('monitor_status') != 'OK' or observation.get('interactive_desktop_verified') is not True:
+        return {'status': 'OBSERVATION_UNAVAILABLE', 'reason': 'Cursor, monitor ou desktop indisponível'}
+    if not isinstance(monitor.get('device'), str) or not monitor['device']:
+        return {'status': 'OBSERVATION_UNAVAILABLE', 'reason': 'Identidade do monitor indisponível'}
+    if observation.get('coordinates_compatible') is not True:
+        return {'status': 'COORDINATE_MISMATCH', 'reason': 'DPI ou coordenadas não confirmados'}
+    proposal = propose_delegated_move(observation.get('cursor'), monitor.get('monitor_rect'), safe_rect, coordinates_verified=True)
+    if proposal['status'] != 'PROPOSED':
+        return proposal
+    return MappingProxyType({'status': 'PROPOSED', 'task_id': task_id, 'action': 'MOVE_CURSOR',
+        'start': proposal['start'], 'target': proposal['target'], 'monitor': monitor.get('device'),
+        'monitor_rect': tuple(monitor['monitor_rect']), 'safe_rect': tuple(safe_rect),
+        'tolerance': 0, 'deadline_monotonic': deadline_monotonic, 'execution_authorized': False})
+
+
+def observe_physical_cursor(user32=None):
+    """Read physical cursor coordinates only; never authorizes or moves input."""
+    if user32 is None:
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+    position = wintypes.POINT()
+    try:
+        if not user32.GetPhysicalCursorPos(ctypes.byref(position)):
+            return {'status': 'OBSERVATION_UNAVAILABLE', 'source': 'GetPhysicalCursorPos', 'error_code': ctypes.get_last_error()}
+        return {'status': 'OBSERVED', 'source': 'GetPhysicalCursorPos', 'cursor': (position.x, position.y), 'timestamp': time.time()}
+    except (AttributeError, OSError) as exc:
+        return {'status': 'OBSERVATION_UNAVAILABLE', 'source': 'GetPhysicalCursorPos', 'error_type': type(exc).__name__}
+
+
+def observe_physical_monitor(api=None, cursor_reader=None):
+    """Read physical display mode and cursor; no input or approval."""
+    if api is None:
+        import win32api as api
+    if cursor_reader is None:
+        cursor_reader = observe_physical_cursor
+    cursor = cursor_reader()
+    if cursor.get('status') != 'OBSERVED':
+        return {'status':'OBSERVATION_UNAVAILABLE', 'reason':'Cursor físico indisponível'}
+    try:
+        displays = []
+        for handle, _, _ in api.EnumDisplayMonitors():
+            info = api.GetMonitorInfo(handle)
+            mode = api.EnumDisplaySettingsEx(info['Device'], -1, 0)
+            x, y = int(mode.Position_x), int(mode.Position_y)
+            rect = (x, y, x + int(mode.PelsWidth), y + int(mode.PelsHeight))
+            if mode.PelsWidth <= 0 or mode.PelsHeight <= 0:
+                raise ValueError('Invalid display mode')
+            displays.append((info['Device'], rect))
+        point = cursor['cursor']
+        matches = [(name, rect) for name, rect in displays if rect[0] <= point[0] < rect[2] and rect[1] <= point[1] < rect[3]]
+        if len(matches) != 1:
+            return {'status':'OBSERVATION_UNAVAILABLE', 'reason':'Monitor físico não identificado unicamente'}
+        name, rect = matches[0]
+        return {'status':'OBSERVED', 'cursor':point, 'monitor':name, 'monitor_rect':rect, 'coordinate_space':'PHYSICAL', 'source':'GetPhysicalCursorPos/EnumDisplaySettingsExW', 'timestamp':cursor['timestamp']}
+    except Exception as exc:
+        return {'status':'OBSERVATION_UNAVAILABLE', 'reason':'Geometria indisponível', 'error_type':type(exc).__name__}
+
+
+def observe_verified_safe_region(lab_hwnd, lab_pid, safe_rect):
+    """No region is trusted until live identity and complete controls are verified."""
+    return {'status': 'SAFE_REGION_UNVERIFIED',
+            'reason': 'Nenhum provedor existente comprova atualmente a região física e a ausência de controles após o clique.'}
+
+
+def find_verified_safe_region(observation):
+    """Fail closed until a live physical region/control verifier is connected."""
+    return {'status':'SAFE_REGION_UNVERIFIED', 'reason':'Região livre de controles não foi comprovada por observação atual.'}

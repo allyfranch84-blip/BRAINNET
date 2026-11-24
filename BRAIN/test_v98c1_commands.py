@@ -46,9 +46,9 @@ class CommandsModesTests(unittest.TestCase):
   self.b._kernel.context_engine=SimpleNamespace(capture_foreground_context=Mock())
   self.b._kernel.vision=SimpleNamespace(descrever_tela=Mock(return_value='Descrição simulada'))
   self.assertEqual(self.b.send_command('/uia scan')['status'],'TARGET_REQUIRED')
-  with patch('uia_chat_readonly.inspect_window',return_value={'pid':20,'started':123.0,'rect':(0,0,100,100)}),patch('perception_eye.HAS_UIA_NATIVE',True):
+  with patch('uia_chat_readonly.inspect_window',return_value={'hwnd':42,'pid':20,'started':123.0,'rect':(0,0,100,100)}),patch('perception_eye.HAS_UIA_NATIVE',True):
    observed=self.b.send_command('/uia scan 42 20')
-  self.assertEqual(observed['status'],'OBSERVED');eye.scan_uia_properties.assert_called_once_with(42,max_controls=100)
+  self.assertEqual(observed['status'],'OBSERVED');eye.scan_uia_properties.assert_called_once_with(42,max_controls=100,include_sensitive=False)
   self.assertNotIn('Segredo',str(observed))
   self.b._kernel.context_engine.capture_foreground_context.assert_not_called()
   self.assertEqual(self.b.send_command('/visao agora')['status'],'OBSERVATION_UNVERIFIED')

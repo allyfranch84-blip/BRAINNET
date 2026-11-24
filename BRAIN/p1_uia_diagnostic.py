@@ -105,7 +105,8 @@ def main():
 
     eye = perception_eye.PerceptionEye.__new__(perception_eye.PerceptionEye)
     result = diagnose(args.hwnd, args.pid, inspect=inspect,
-                      scan=lambda hwnd: eye.scan_uia_properties(hwnd, max_controls=100),
+                      scan=lambda hwnd: eye.scan_uia_properties(
+                          hwnd, max_controls=100, include_sensitive=args.include_control_names),
                       provider_available=perception_eye.HAS_UIA_NATIVE,
                       include_names=args.include_control_names)
     print(json.dumps(result, ensure_ascii=False))

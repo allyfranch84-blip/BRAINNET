@@ -1,14 +1,17 @@
 """Deterministic tests only. No Windows, GUI, microphone or physical actuator."""
 import os
+import struct
 import unittest
-from unittest.mock import Mock
+from contextlib import nullcontext
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from uia_chat_readonly import chat_reply, scan_explicit_window
 
 
 class ReadonlyUIAContractTests(unittest.TestCase):
     def setUp(self):
-        self.window = {'pid': 2341, 'started': 12345.125, 'rect': (10, 20, 400, 300)}
+        self.window = {'hwnd': 42, 'pid': 2341, 'started': 12345.125, 'rect': (10, 20, 400, 300)}
         self.inspector = Mock(return_value=self.window)
         self.scanner = Mock(return_value=[
             {'name': 'segredo', 'automation_id': 'hidden-identifier',
@@ -26,7 +29,7 @@ class ReadonlyUIAContractTests(unittest.TestCase):
         self.assertEqual(result['status'], 'OBSERVED')
         self.assertEqual(result['control_count'], 2)
         self.assertEqual(result['types'][0]['type'], 'EditControl')
-        self.scanner.assert_called_once_with(42, max_controls=100)
+        self.scanner.assert_called_once_with(42, max_controls=100, include_sensitive=False)
         self.assertEqual(self.inspector.call_count, 2)
         self.assertFalse(result['execution_authorized'])
         self.assertNotIn('segredo', str(result))
@@ -41,7 +44,8 @@ class ReadonlyUIAContractTests(unittest.TestCase):
         self.assertEqual(self.inspector.call_args_list[1].args, (42,))
 
     def test_no_target_or_wrong_pid_refuses_before_uia(self):
-        for hwnd, pid in [(0, 2341), (-1, 2341), (42, 0), (42, -1), (True, 2341), (42, False), (42, 9999)]:
+        for hwnd, pid in [(0, 2341), (-1, 2341), (42, 0), (42, -1), (True, 2341), (42, False),
+                          (42, 9999), (2 ** (8 * struct.calcsize('P')), 2341), (42, 2 ** 32)]:
             with self.subTest(hwnd=hwnd, pid=pid):
                 result = self.read(hwnd=hwnd, pid=pid)
                 self.assertEqual(result['status'], 'TARGET_INVALID')
@@ -75,6 +79,22 @@ class ReadonlyUIAContractTests(unittest.TestCase):
         result = self.read(inspector=inspector)
         self.assertEqual(result['status'], 'CONTEXT_CHANGED')
 
+    def test_changed_hwnd_and_pid_refused(self):
+        for change in ({'hwnd': 43}, {'pid': 2342}):
+            with self.subTest(change=change):
+                inspector = Mock(side_effect=[self.window, {**self.window, **change}])
+                result = self.read(inspector=inspector)
+                self.assertEqual(result['status'], 'CONTEXT_CHANGED')
+                self.assertEqual(result['examples'], [])
+
+    def test_invalid_initial_identity_and_rectangle_fail_closed(self):
+        for change in ({'hwnd': 43}, {'started': float('nan')},
+                       {'started': True}, {'rect': (0, 0, 0, 0)}):
+            with self.subTest(change=change):
+                result = self.read(inspector=Mock(return_value={**self.window, **change}))
+                self.assertEqual(result['status'], 'TARGET_INVALID')
+        self.scanner.assert_not_called()
+
     def test_changed_rectangle_refused(self):
         inspector = Mock(side_effect=[self.window, {**self.window, 'rect': (10, 20, 401, 300)}])
         self.assertEqual(self.read(inspector=inspector)['status'], 'CONTEXT_CHANGED')
@@ -100,6 +120,54 @@ class ReadonlyUIAContractTests(unittest.TestCase):
         self.assertEqual(result['status'], 'OBSERVED')
         self.assertEqual(result['types'][0]['type'], 'Unknown')
         self.assertNotIn('private', str(result))
+
+    def test_type_cannot_expose_alphanumeric_private_text(self):
+        self.scanner.return_value = [{'control_type': 'PrivateSecret123', 'rect': [1, 2, 3, 4]}]
+        result = self.read()
+        self.assertEqual(result['status'], 'OBSERVED')
+        self.assertEqual(result['types'][0]['type'], 'Unknown')
+        self.assertNotIn('PrivateSecret123', str(result))
+        self.assertNotIn('PrivateSecret123', chat_reply(result))
+
+    def test_degenerate_geometry_and_oversized_result_are_not_observed(self):
+        self.scanner.return_value = [{'rect': (0, 0, 0, 0)}]
+        self.assertEqual(self.read()['status'], 'INSUFFICIENT_EVIDENCE')
+        self.scanner.return_value = [{'control_type': 'ButtonControl'}] * 101
+        result = self.read()
+        self.assertEqual(result['status'], 'UNAVAILABLE')
+        self.assertEqual(result['examples'], [])
+
+    def test_real_scanner_does_not_request_sensitive_uia_properties(self):
+        from perception_eye import PerceptionEye
+        access = []
+        class FakeControl:
+            @property
+            def Name(self):
+                access.append('name')
+                return 'private'
+            @property
+            def AutomationId(self):
+                access.append('automation_id')
+                return 'private'
+            ControlTypeName = 'ButtonControl'
+            ProcessId = 2341
+            IsEnabled = True
+            IsOffscreen = False
+            BoundingRectangle = SimpleNamespace(left=1, top=2, right=10, bottom=20)
+            def GetRuntimeId(self): return (1, 2)
+            def GetInvokePattern(self): return None
+            def GetExpandCollapsePattern(self): return None
+        root = SimpleNamespace(Exists=lambda *args: True)
+        fake = SimpleNamespace(UIAutomationInitializerInThread=lambda: nullcontext(),
+                               ControlFromHandle=lambda hwnd: root,
+                               WalkTree=lambda *args, **kwargs: [(FakeControl(), 0)])
+        with patch('perception_eye.auto', fake), patch('perception_eye.HAS_UIA_NATIVE', True):
+            eye = PerceptionEye.__new__(PerceptionEye)
+            result = eye.scan_uia_properties(42, max_controls=100, include_sensitive=False)
+        self.assertEqual(access, [])
+        self.assertIsNone(result[0]['name'])
+        self.assertIsNone(result[0]['automation_id'])
+        self.assertEqual(result[0]['control_type'], 'ButtonControl')
 
 
 if __name__ == '__main__':

@@ -66,17 +66,46 @@ VK_MAP = {
 class Effector:
     """Os Musculos Biomecanicos do BRAINNET."""
 
-    def mouse_move(self, x: int, y: int) -> bool:
-        """Movimento neuromuscular contínuo via curva Bézier cúbica com micro-jitter."""
+    def mouse_move(self, x: int, y: int, *, profile: str = "bezier", tolerance: int = 0) -> bool:
+        """Movimento autorizado; sucesso exige leitura independente da posição final."""
+        require_action_allowed("MOVE_CURSOR")
+        if type(x) is not int or type(y) is not int or profile not in ("bezier", "deterministic", "physical_diagnostic") or type(tolerance) is not int or not 0 <= tolerance <= 3:
+            raise ValueError("Parâmetros inválidos de movimento")
+        if profile == "physical_diagnostic":
+            from execution_authority import require_specific_physical_move
+            require_specific_physical_move(x, y)
+            before = POINT()
+            if not user32.GetPhysicalCursorPos(ctypes.byref(before)):
+                return False
+            from execution_authority import _physical_move_scope
+            if (before.x, before.y) != _physical_move_scope.get().start:
+                return False
+            require_specific_physical_move(x, y)
+            if not user32.SetPhysicalCursorPos(x, y):
+                return False
+            require_specific_physical_move(x, y)
+            after = POINT()
+            if not user32.GetPhysicalCursorPos(ctypes.byref(after)):
+                return False
+            return abs(after.x - x) <= tolerance and abs(after.y - y) <= tolerance
+        def verified():
+            require_action_allowed("MOVE_CURSOR")
+            position = POINT()
+            if not user32.GetCursorPos(ctypes.byref(position)):
+                return False
+            return abs(position.x - x) <= tolerance and abs(position.y - y) <= tolerance
         pt_atual = POINT()
-        user32.GetCursorPos(ctypes.byref(pt_atual))
+        if not user32.GetCursorPos(ctypes.byref(pt_atual)):
+            return False
         x0, y0 = pt_atual.x, pt_atual.y
         x3, y3 = int(x), int(y)
 
         dist = math.hypot(x3 - x0, y3 - y0)
-        if dist < 4:
-            user32.SetCursorPos(x3, y3)
-            return True
+        if profile == "deterministic" or dist < 4:
+            require_action_allowed("MOVE_CURSOR")
+            if not user32.SetCursorPos(x3, y3):
+                return False
+            return verified()
 
         # Pontos de controle intermediários
         desvio = dist * random.uniform(0.12, 0.25)
@@ -99,10 +128,12 @@ class Effector:
                 bx += random.gauss(0, 0.65)
                 by += random.gauss(0, 0.65)
 
-            user32.SetCursorPos(int(bx), int(by))
+            require_action_allowed("MOVE_CURSOR")
+            if not user32.SetCursorPos(int(bx), int(by)):
+                return False
             time.sleep(random.uniform(0.003, 0.006))
 
-        return True
+        return verified()
 
     def mouse_click(self, button: str = "left", count: int = 1) -> bool:
         """Diferenciacao real entre clique esquerdo, direito e central."""

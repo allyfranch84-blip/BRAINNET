@@ -256,6 +256,76 @@ class ActuatorBridge:
                     return await self._complete_physical(
                         activate_ui_control, payload.get('target'), payload.get('intent'),
                         value=payload.get('value'), baseline_input=payload.get('baseline_input'))
+            case "mouse_move_relative":
+                async with self._input_lock:
+                    require_action_allowed(action)
+                    from execution_authority import PhysicalMoveApproval, RelativePhysicalMoveProposal, PhysicalMoveProposal, approved_physical_move_scope
+                    from capability_lab import observe_physical_monitor, observe_verified_safe_region
+                    approval, proposal = payload.get('approval'), payload.get('proposal')
+                    if type(approval) is not PhysicalMoveApproval or type(proposal) is not RelativePhysicalMoveProposal:
+                        return {'status':'ACTION_BLOCKED', 'code':'APPROVAL_MISSING'}
+                    def execute_relative_once():
+                        require_action_allowed(action)
+                        observation = observe_physical_monitor()
+                        region = observe_verified_safe_region(proposal.lab_hwnd, proposal.lab_pid, proposal.safe_rect)
+                        decision = approval.consume_relative(proposal, observation, region)
+                        if not decision['ok']:
+                            return {'status':'ACTION_BLOCKED','code':decision['code'], 'approval_consumed': True}
+                        require_action_allowed(action)
+                        resolved = PhysicalMoveProposal(proposal.task_id, proposal.proposal_id, decision['start'], decision['target'], proposal.monitor, proposal.monitor_rect, proposal.tolerance, proposal.deadline_monotonic)
+                        try:
+                            with approved_physical_move_scope(resolved):
+                                ok = self._effector.mouse_move(*resolved.target, profile='physical_diagnostic', tolerance=resolved.tolerance)
+                        except Exception as exc:
+                            return {'status':'ACTION_FAILED','code':'ACTUATOR_FAILED','error_type':type(exc).__name__,'approval_consumed':True}
+                        after = observe_physical_monitor()
+                        point = after.get('cursor')
+                        confirmed = (ok is True and after.get('status') == 'OBSERVED' and after.get('coordinate_space') == 'PHYSICAL'
+                                     and after.get('monitor') == resolved.monitor and tuple(after.get('monitor_rect',())) == resolved.monitor_rect
+                                     and point == resolved.target)
+                        require_action_allowed(action)
+                        return {'status':'EFFECT_VERIFIED' if confirmed else 'EFFECT_UNVERIFIED', 'approval_consumed':True,
+                                'before':resolved.start,'target':resolved.target,'after':point}
+                    return await self._complete_physical(execute_relative_once)
+            case "mouse_move_physical":
+                async with self._input_lock:
+                    require_action_allowed(action)
+                    from execution_authority import PhysicalMoveApproval, PhysicalMoveProposal, approved_physical_move_scope
+                    from capability_lab import observe_physical_monitor
+                    approval, proposal = payload.get('approval'), payload.get('proposal')
+                    if type(approval) is not PhysicalMoveApproval or type(proposal) is not PhysicalMoveProposal:
+                        return {'status': 'ACTION_BLOCKED', 'code': 'APPROVAL_MISSING', 'category': 'approval'}
+                    def execute_once():
+                        require_action_allowed(action)
+                        observed = observe_physical_monitor()
+                        decision = approval.consume_diagnostic(proposal, observed)
+                        if not decision['ok']:
+                            return {'status': 'ACTION_BLOCKED', **decision, 'approved_start': proposal.start,
+                                    'observed_cursor': observed.get('cursor'), 'approved_monitor': proposal.monitor,
+                                    'observed_monitor': observed.get('monitor'), 'approved_rect': proposal.monitor_rect,
+                                    'observed_rect': observed.get('monitor_rect'), 'observed_space': observed.get('coordinate_space'),
+                                    'observed_timestamp': observed.get('timestamp')}
+                        require_action_allowed(action)
+                        started = time.perf_counter()
+                        try:
+                            with approved_physical_move_scope(proposal):
+                                ok = self._effector.mouse_move(*proposal.target, profile='physical_diagnostic', tolerance=proposal.tolerance)
+                        except Exception as exc:
+                            return {'status': 'ACTION_FAILED', 'code': 'ACTUATOR_FAILED', 'category': 'actuator',
+                                    'error_type': type(exc).__name__, 'approval_consumed': True}
+                        after = observe_physical_monitor()
+                        point = after.get('cursor')
+                        confirmed = (ok is True and after.get('status') == 'OBSERVED' and after.get('monitor') == proposal.monitor
+                                     and tuple(after.get('monitor_rect', ())) == proposal.monitor_rect and isinstance(point, (tuple,list))
+                                     and len(point) == 2 and abs(point[0]-proposal.target[0]) <= proposal.tolerance
+                                     and abs(point[1]-proposal.target[1]) <= proposal.tolerance)
+                        require_action_allowed(action)
+                        return {'status': 'EFFECT_VERIFIED' if confirmed else 'EFFECT_UNVERIFIED',
+                                'code': 'EFFECT_VERIFIED' if confirmed else 'EFFECT_NOT_CONFIRMED',
+                                'category': 'verification', 'approval_consumed': True,
+                                'before': observed.get('cursor'), 'after': point, 'target': proposal.target,
+                                'latency_ms': round((time.perf_counter()-started)*1000, 3)}
+                    return await self._complete_physical(execute_once)
             # Physical Actuator Layer (Exclusive Lock)
             case "mouse_move" | "mouse_click" | "mouse_click_at" | "right_click" | "scroll" | "send_text" | "hotkey" | "mouse_drag":
                 async with self._input_lock:
@@ -279,7 +349,8 @@ class ActuatorBridge:
                             return await self._complete_physical(move_and_click)
                         case "mouse_move":
                             return await self._complete_physical(
-                                self._invoke_actuator, action, self._effector.mouse_move, payload.get("x", 0), payload.get("y", 0)
+                                self._invoke_actuator, action, self._effector.mouse_move, payload.get("x", 0), payload.get("y", 0),
+                                profile=payload.get("profile", "bezier"), tolerance=payload.get("tolerance", 0)
                             )
                         case "mouse_click":
                             return await self._complete_physical(

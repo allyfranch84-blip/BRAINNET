@@ -6,9 +6,30 @@ Windows inspection is lazy so deterministic contract tests run without Win32.
 from __future__ import annotations
 
 from collections import Counter
+import math
 import os
-import re
+import struct
 import time
+
+CONTROL_TYPES = frozenset({
+    'AppBarControl', 'ButtonControl', 'CalendarControl', 'CheckBoxControl',
+    'ComboBoxControl', 'CustomControl', 'DataGridControl', 'DataItemControl',
+    'DocumentControl', 'EditControl', 'GroupControl', 'HeaderControl',
+    'HeaderItemControl', 'HyperlinkControl', 'ImageControl', 'ListControl',
+    'ListItemControl', 'MenuBarControl', 'MenuControl', 'MenuItemControl',
+    'PaneControl', 'ProgressBarControl', 'RadioButtonControl', 'ScrollBarControl',
+    'SemanticZoomControl', 'SeparatorControl', 'SliderControl', 'SpinnerControl',
+    'SplitButtonControl', 'StatusBarControl', 'TabControl', 'TabItemControl',
+    'TableControl', 'TextControl', 'ThumbControl', 'TitleBarControl',
+    'ToolBarControl', 'ToolTipControl', 'TreeControl', 'TreeItemControl',
+    'WindowControl',
+})
+
+
+def _valid_rect(rect):
+    return (isinstance(rect, (tuple, list)) and len(rect) == 4 and
+            all(type(v) is int and -(2 ** 31) <= v < 2 ** 31 for v in rect) and
+            rect[0] < rect[2] and rect[1] < rect[3])
 
 
 def inspect_window(hwnd: int):
@@ -28,12 +49,15 @@ def inspect_window(hwnd: int):
     user32.IsWindow.restype = wintypes.BOOL
     user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
     user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
     user32.GetWindowRect.restype = wintypes.BOOL
 
-    if not user32.IsWindow(hwnd) or not user32.IsWindowVisible(hwnd):
+    if (not user32.IsWindow(hwnd) or not user32.IsWindowVisible(hwnd) or
+            user32.GetAncestor(hwnd, 2) != hwnd):  # GA_ROOT: require a top-level window
         return None
     native_pid = wintypes.DWORD(0)
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(native_pid))
@@ -43,13 +67,13 @@ def inspect_window(hwnd: int):
     rect = RECT()
     if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
         return None
-    return {"pid": native_pid.value, "started": proc.create_time(),
+    return {"hwnd": hwnd, "pid": native_pid.value, "started": proc.create_time(),
             "rect": (rect.left, rect.top, rect.right, rect.bottom)}
 
 
 def _control_type(row):
     value = row.get("control_type")
-    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,40}", value) else "Unknown"
+    return value if isinstance(value, str) and value in CONTROL_TYPES else "Unknown"
 
 
 def scan_explicit_window(hwnd, pid, *, scanner, provider_available, inspector=None, clock=time.perf_counter):
@@ -71,7 +95,8 @@ def scan_explicit_window(hwnd, pid, *, scanner, provider_available, inspector=No
         result["elapsed_ms"] = round((clock() - started_at) * 1000, 3)
         return result
 
-    if type(hwnd) is not int or type(pid) is not int or hwnd <= 0 or pid <= 0:
+    if (type(hwnd) is not int or type(pid) is not int or hwnd <= 0 or pid <= 0 or
+            hwnd >= 2 ** (8 * struct.calcsize('P')) or pid >= 2 ** 32):
         return done("TARGET_INVALID", "HWND/PID inválidos")
     if pid == os.getpid():
         return done("TARGET_INVALID", "A própria sessão da BRAINNET não é um alvo externo")
@@ -80,26 +105,29 @@ def scan_explicit_window(hwnd, pid, *, scanner, provider_available, inspector=No
         before = inspect(hwnd)
     except Exception:
         return done("UNAVAILABLE", "Não foi possível inspecionar a janela")
-    if not isinstance(before, dict) or before.get("pid") != pid or not before.get("started") or not before.get("rect"):
+    process_started = before.get("started") if isinstance(before, dict) else None
+    if (not isinstance(before, dict) or before.get("hwnd") != hwnd or before.get("pid") != pid or
+            type(process_started) not in (int, float) or not math.isfinite(process_started) or
+            process_started <= 0 or not _valid_rect(before.get("rect"))):
         return done("TARGET_INVALID", "Identidade ou geometria da janela não confirmada")
     if not provider_available:
         return done("PROVIDER_UNAVAILABLE", "Biblioteca UIA indisponível")
     try:
-        rows = scanner(hwnd, max_controls=100)
+        rows = scanner(hwnd, max_controls=100, include_sensitive=False)
         after = inspect(hwnd)
     except Exception as exc:
         return done("UNAVAILABLE", "Leitura UIA indisponível: " + type(exc).__name__)
-    if not isinstance(after, dict) or any(after.get(k) != before.get(k) for k in ("pid", "started", "rect")):
+    if not isinstance(after, dict) or any(after.get(k) != before.get(k) for k in ("hwnd", "pid", "started", "rect")):
         return done("CONTEXT_CHANGED", "Janela, processo ou geometria mudaram durante a leitura")
     if not isinstance(rows, list):
         return done("UNAVAILABLE", "Resposta UIA inválida")
+    if len(rows) > 100:
+        return done("UNAVAILABLE", "Leitura UIA excedeu limite de 100 elementos")
     if not rows:
         result["control_count"] = 0
         return done("EMPTY_OR_PROVIDER_UNAVAILABLE", "Lista vazia não comprova provedor funcional")
     valid = [x for x in rows if isinstance(x, dict) and
-             (_control_type(x) != "Unknown" or (
-                 isinstance(x.get("rect"), (tuple, list)) and len(x["rect"]) == 4
-                 and all(type(v) is int for v in x["rect"])))]
+             (_control_type(x) != "Unknown" or _valid_rect(x.get("rect")))]
     result["control_count"] = len(rows)
     if not valid:
         return done("INSUFFICIENT_EVIDENCE", "Elementos sem tipo ou geometria utilizável")
@@ -107,7 +135,7 @@ def scan_explicit_window(hwnd, pid, *, scanner, provider_available, inspector=No
     result["types"] = [{"type": kind, "count": count} for kind, count in counts.most_common(6)]
     for item in valid[:3]:
         rect = item.get("rect")
-        safe_rect = list(rect) if isinstance(rect, (tuple, list)) and len(rect) == 4 and all(type(v) is int for v in rect) else None
+        safe_rect = list(rect) if _valid_rect(rect) else None
         result["examples"].append({"control_type": _control_type(item), "rect": safe_rect})
     return done("OBSERVED")
 

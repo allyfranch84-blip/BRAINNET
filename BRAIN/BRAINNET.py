@@ -81,6 +81,7 @@ _EFFORT_LIMITS = {
 from contextvars import ContextVar as _EffortContextVar
 _effort_for_command = _EffortContextVar('brainnet_effort', default='BALANCED')
 _conversation_for_command = _EffortContextVar('brainnet_conversation', default=None)
+_conversation_finish_reason = _EffortContextVar('brainnet_conversation_finish_reason', default=None)
 
 def _effective_effort(mode, text):
     if mode not in ('FAST', 'BALANCED', 'DEEP', 'AUTO'):
@@ -184,6 +185,33 @@ class BrainnetKernel:
                     'execution_authorized': False}
 
     def __init__(self) -> None:
+        self.minimal_mode = os.getenv('BRAINNET_MINIMAL') == '1'
+        self.rem_maintenance_enabled = False  # Requires separate review and authorization.
+        if self.minimal_mode:
+            # Existing read-only and actuator components only; no database or REM.
+            self.context_engine = ContextCapture()
+            self.vsa = FHRRHyperdimensionalEngine(dimension=10_000)
+            self.eye = PerceptionEye(vsa_engine=self.vsa)
+            self.effector = Effector()
+            self.bridge = ActuatorBridge(effector_instance=self.effector, perception_instance=self.eye, max_workers=1)
+            self.pdag = None
+            self.rem_engine = None
+            self.ontology = None
+            self.router = None
+            self.situation_memory = None
+            self.situation_index = None
+            self.skill_registry = {}
+            self.ultimo_toque_ai = time.time()
+            self.esta_dormindo = False
+            self.is_running = False
+            self.loop = None
+            self._adaptive_observer = None
+            self._runtime_telemetry = None
+            self._runtime_task_lock = threading.RLock()
+            self._runtime_tasks = {}
+            self._runtime_recent_tasks = deque(maxlen=32)
+            logger.info("Perfil mínimo: REM, P-DAG, memória persistente e inferência não inicializados.")
+            return
         logger.info("Inicializando subsistemas cognitivos do Brainnet Kernel...")
 
         self.context_engine = ContextCapture()
@@ -220,8 +248,6 @@ class BrainnetKernel:
             hab_dir.mkdir(parents=True, exist_ok=True)
 
         self.rem_engine = REMSleepEngine(db_path="core1_pdag.db", skills_dir=hab_dir, idle_threshold_sec=900.0, pdag_engine=self.pdag)
-        # Maintenance can delete persistent data; keep both entry points disabled until validated.
-        self._rem_maintenance_enabled = False
         
         self.world_model = WorldModelEngine(self.context_engine, self.governance, self.eye, self.vsa, self.pdag)
         self.shadow = ShadowSimulator(self.context_engine, self.eye, self.vsa, self.pdag)
@@ -325,8 +351,7 @@ class BrainnetKernel:
                 inatividade = time.time() - self.ultimo_toque_ai
 
                 # Dorme quando a IA fica 3 minutos (180s) sem o usuário mandar mensagem ou falar
-                if (self._rem_maintenance_enabled and inatividade >= 180.0
-                        and not self.esta_dormindo and self.rem_engine.is_system_ready_for_sleep()):
+                if self.rem_maintenance_enabled and inatividade >= 180.0 and not self.esta_dormindo:
                     self.esta_dormindo = True
                     logger.info("[SONO REM]: 3 minutos sem interação com a IA. Entrando em sono REM...")
                     threading.Thread(target=self._executar_rem_completo, daemon=True).start()
@@ -357,19 +382,13 @@ class BrainnetKernel:
                 logger.debug(f"Ciclo circadiano: {e}")
 
     def _executar_rem_completo(self) -> None:
-        if not self._rem_maintenance_enabled:
-            logger.info("[SONO REM]: manutencao desativada.")
-            return
-        try:
-            logger.info("[SONO REM]: Injetando ruído de fase (sigma = 0.15*pi) e reciclando memória...")
-            self.rem_engine.execute_full_rem_cycle()
-            self.rem_engine.dream_and_immunize_ui_drifts(self.vsa)
-            if self.ontology:
-                self.ontology.run_deep_rem_dissolution()
-        except Exception:
-            logger.exception("[SONO REM]: ciclo interrompido; estado de manutencao nao confirmado.")
-            self._rem_maintenance_enabled = False
-            self.esta_dormindo = False
+        if not self.rem_maintenance_enabled:
+            raise PermissionError("Manutenção REM desativada; requer autorização específica")
+        logger.info("[SONO REM]: Injetando ruído de fase (sigma = 0.15*pi) e reciclando memória...")
+        self.rem_engine.execute_full_rem_cycle()
+        self.rem_engine.dream_and_immunize_ui_drifts(self.vsa)
+        if self.ontology:
+            self.ontology.run_deep_rem_dissolution()
 
     async def start(self) -> None:
         if self.is_running:
@@ -379,8 +398,11 @@ class BrainnetKernel:
         watchdog = None
         try:
             await self.bridge.start()
-            self._runtime_telemetry.start()
-            watchdog = asyncio.create_task(self._circadian_rem_watchdog())
+            if not getattr(self, 'minimal_mode', False):
+                self._runtime_telemetry.start()
+                watchdog = asyncio.create_task(self._circadian_rem_watchdog())
+            else:
+                logger.info("REM automático e telemetria desativados no perfil mínimo.")
             if os.getenv('BRAINNET_ADAPTIVE_OBSERVE') == '1':
                 try:
                     if self._adaptive_observer is None:
@@ -389,12 +411,14 @@ class BrainnetKernel:
                     self._adaptive_observer.start()
                 except Exception as exc:
                     logger.warning('[ADAPTIVE-OBSERVE] indisponivel: %s', type(exc).__name__)
-            logger.info("Kernel online: Teoria da Mente, Verificador Factual Tripartite e H-Mem operacionais.")
+            logger.info("Kernel iniciado; disponibilidade dos subsistemas opcionais não verificada.")
             while self.is_running:
                 await asyncio.sleep(1.0)
         finally:
             self.is_running = False
-            if not await asyncio.to_thread(self._runtime_telemetry.stop):
+            if getattr(self, 'minimal_mode', False):
+                await self.bridge.stop()
+            if self._runtime_telemetry is not None and not await asyncio.to_thread(self._runtime_telemetry.stop):
                 logger.warning('[TELEMETRY] encerramento ainda pendente')
             if self._adaptive_observer is not None:
                 stopped = await asyncio.to_thread(self._adaptive_observer.stop)
@@ -410,6 +434,11 @@ class BrainnetKernel:
 # ------------------------------------------------------------------------------
 
 class BrainnetBridge:
+    def _resume_motor_simulation(self, task_id, operation_id, decision, evidence, motor):
+        """Internal test-only path; cannot authorize or dispatch physical actions."""
+        from motor_simulation import resume
+        return resume(self, task_id, operation_id, decision, evidence, motor)
+
     def __init__(self, kernel: BrainnetKernel) -> None:
         self._kernel = kernel
         self._window: Optional[webview.Window] = None
@@ -426,6 +455,8 @@ class BrainnetBridge:
         self._proprioception = DigitalProprioceptionGate(self._kernel.vsa)
         self._tom = TheoryOfMindEngine(self._kernel.vsa, threshold_go=0.75)
         self._chat_history: List[Dict[str, str]] = []
+        self._p4_lock = threading.Lock()
+        self._p4_pending = {}
         from contextual_grounder import ContextualGrounder
         import psutil
         self._contextual_grounder = ContextualGrounder(
@@ -601,7 +632,10 @@ class BrainnetBridge:
         configured = self.get_effort_mode()['mode']
         effective = _effective_effort(configured, text)
         limits = _EFFORT_LIMITS[effective]
-        task_budget = SharedTaskBudget(uuid.uuid4().hex, effective, time.monotonic() + limits['timeout'],
+        command_started = time.perf_counter()
+        p4_requested = getattr(getattr(self, '_kernel', None), 'minimal_mode', False) and os.getenv('BRAINNET_P4_PHYSICAL_PROPOSALS') == '1' and text.strip().casefold() == 'mova o mouse em qualquer direção'
+        task_deadline = 180 if p4_requested else limits['timeout']
+        task_budget = SharedTaskBudget(uuid.uuid4().hex, effective, time.monotonic() + task_deadline,
                                        current_authorization(), ExecutionLimits(8, 8, limits['visual_steps'], limits['num_predict'] * 8))
         kernel = getattr(self, '_kernel', None)
         registry = getattr(kernel, '_runtime_tasks', None)
@@ -617,11 +651,14 @@ class BrainnetBridge:
         budget_token = current_task_budget.set(task_budget)
         token = _effort_for_command.set(effective)
         conversation_token = _conversation_for_command.set(self.get_conversation_status())
+        finish_token = _conversation_finish_reason.set(None)
         awaiting_approval = False
         try:
             try:
                 result = self._send_command_impl(text)
-                awaiting_approval = result.get('status') == 'AUTHORIZATION_REQUIRED' and result.get('pending_operation_id') is not None
+                if _conversation_finish_reason.get() in ('length', 'max_tokens') and not result.get('status'):
+                    result['status'] = 'INCOMPLETE'
+                awaiting_approval = result.get('status') in ('AUTHORIZATION_REQUIRED', 'PENDING_APPROVAL') and result.get('pending_operation_id') is not None
             except BudgetExhausted as exc:
                 result = {'reply': str(exc), 'logs': [], 'status': 'BUDGET_EXHAUSTED', 'sucesso_real': False}
             except BaseException as exc:
@@ -631,6 +668,7 @@ class BrainnetBridge:
         finally:
             _effort_for_command.reset(token)
             _conversation_for_command.reset(conversation_token)
+            _conversation_finish_reason.reset(finish_token)
             current_task_budget.reset(budget_token)
             if registry is not None and registry_lock is not None:
                 with registry_lock:
@@ -640,7 +678,14 @@ class BrainnetBridge:
                     if recent is not None and not awaiting_approval:
                         recent.append(task_budget)
         result['task_budget'] = task_budget.snapshot()
+        if getattr(kernel, 'minimal_mode', False):
+            logger.info('[P3] pid=%s task_id=%s route=%s status=%s dispatched=%s elapsed_ms=%.3f',
+                        os.getpid(), task_budget.task_id,
+                        'delegated_move' if (result.get('motor_proposal') or {}).get('direction_delegated') else 'other',
+                        result.get('status'), result.get('dispatched'), (time.perf_counter()-command_started)*1000)
+
         task_phase = ('WAITING_AUTHORIZATION' if awaiting_approval else
+                      'INCOMPLETE' if result.get('status') == 'INCOMPLETE' else
                       'CANCEL_REQUESTED' if task_budget.cancellation_event.is_set()
                       else 'PENDING' if result['task_budget'].get('inflight') else 'FINISHED')
         self._push_event('aios:task', {'phase': task_phase, 'configured': configured, 'effective': effective,
@@ -732,11 +777,106 @@ class BrainnetBridge:
         prompt_raw = text.strip()
         p_low = prompt_raw.lower()
         p_norm = re.sub(r"\s+", " ", p_low).strip()
+        if getattr(self._kernel, 'minimal_mode', False) and not (p_norm.startswith('/uia scan') or parse_supervised_mouse_move(prompt_raw)):
+            return {'reply': 'Capacidade indisponível no perfil mínimo experimental.', 'logs': [], 'status': 'UNAVAILABLE'}
         manual = self._manual_capability_command(prompt_raw, p_norm)
         if manual is not None:
             return manual
         intent_contract = analyze_literal_intent(prompt_raw)
         motor_proposal = parse_supervised_mouse_move(prompt_raw)
+        if motor_proposal is not None and motor_proposal.get('direction_delegated') and getattr(self._kernel, 'minimal_mode', False) and os.getenv('BRAINNET_P4_PHYSICAL_PROPOSALS') == '1':
+            from adaptive_resource_controller import current_task_budget
+            from capability_lab import observe_physical_monitor, observe_cursor_monitors
+            from execution_authority import PhysicalMoveProposal, PhysicalMoveApproval
+            budget = current_task_budget.get()
+            observation = observe_physical_monitor()
+            desktop = observe_cursor_monitors()
+            if budget is None or observation.get('status') != 'OBSERVED' or desktop.get('interactive_desktop_verified') is not True:
+                return {'status':'ACTION_BLOCKED', 'reply':'Observação física ou desktop indisponível.', 'logs':[], 'dispatched':False}
+            if observation.get('coordinate_space') != 'PHYSICAL':
+                return {'status':'ACTION_BLOCKED','code':'COORDINATE_SPACE_MISMATCH',
+                        'reply':'Observação não está em coordenadas físicas; nenhum movimento executado.',
+                        'logs':[],'dispatched':False}
+            # P4.4 is deliberately narrow: only the literal, user-originated
+            # delegated move reaches this path.  It does not accept a model
+            # proposal, and it reuses the physical bridge's one-use approval.
+            if os.getenv('BRAINNET_P4_DIRECT_MOVE') == '1':
+                start = tuple(observation.get('cursor', ()))
+                rect = tuple(observation.get('monitor_rect', ()))
+                if (len(start) != 2 or len(rect) != 4 or
+                    any(type(v) is not int for v in (*start, *rect))):
+                    return {'status':'ACTION_BLOCKED','code':'COORDINATE_SPACE_MISMATCH',
+                            'reply':'Coordenadas físicas incompletas; nenhum movimento executado.','logs':[],'dispatched':False}
+                left, top, right, bottom = rect
+                if not (left <= start[0] < right and top <= start[1] < bottom):
+                    return {'status':'ACTION_BLOCKED','code':'CURSOR_OUTSIDE_MONITOR',
+                            'reply':'Cursor fora dos limites físicos do monitor; nenhum movimento executado.','logs':[],'dispatched':False}
+                # Deterministic preference: right ten pixels, then left ten at
+                # the right edge.  No other direction or distance is inferred.
+                dx = 10 if start[0] + 10 < right else -10
+                target = (start[0] + dx, start[1])
+                if not (left <= target[0] < right and top <= target[1] < bottom):
+                    return {'status':'ACTION_BLOCKED','code':'MONITOR_BOUNDARY',
+                            'reply':'Não há deslocamento horizontal de 10 pixels dentro do monitor atual.','logs':[],'dispatched':False}
+                operation_id = uuid.uuid4().hex
+                proposal = PhysicalMoveProposal(budget.task_id, operation_id, start, target,
+                                                observation['monitor'], rect, 0, budget.deadline_monotonic)
+                approval = PhysicalMoveApproval(proposal)
+                # This approval derives only from this exact command received
+                # by the local MasterShell bridge, never from LLM output.
+                if not approval.approve_explicitly(operation_id):
+                    return {'status':'ACTION_BLOCKED','code':'APPROVAL_MISSING',
+                            'reply':'Autorização interna do comando não pôde ser criada.','logs':[],'dispatched':False}
+                return self._dispatch_direct_p4_move(proposal, approval, budget)
+            from capability_lab import find_verified_safe_region
+            from execution_authority import RelativePhysicalMoveProposal
+            region = find_verified_safe_region(observation)
+            if region.get('status') != 'VERIFIED' or region.get('coordinate_space') != 'PHYSICAL':
+                return {'status':'ACTION_BLOCKED','code':'SAFE_REGION_UNVERIFIED','reply':'Região segura livre de controles não foi confirmada; nenhum movimento proposto.', 'logs':[], 'dispatched':False}
+            try:
+                safe_rect = tuple(region['safe_rect']); hwnd = region['lab_hwnd']; pid = region['lab_pid']
+                if len(safe_rect) != 4 or any(type(v) is not int for v in safe_rect) or safe_rect[0]>=safe_rect[2] or safe_rect[1]>=safe_rect[3] or type(hwnd) is not int or hwnd <= 0 or type(pid) is not int or pid <= 0:
+                    raise ValueError('invalid region')
+            except (KeyError,TypeError,ValueError):
+                return {'status':'ACTION_BLOCKED','code':'SAFE_REGION_UNVERIFIED','reply':'Evidência da região segura inválida.', 'logs':[], 'dispatched':False}
+            operation_id = budget.begin_pending_motor({'dx':10,'dy':0})
+            budget.cancellation_event = threading.Event()
+            proposal = RelativePhysicalMoveProposal(budget.task_id, operation_id, 10, 0, observation['monitor'], tuple(observation['monitor_rect']), safe_rect, hwnd, pid, 0, budget.deadline_monotonic)
+            approval = PhysicalMoveApproval(proposal)
+            with self._p4_lock:
+                self._p4_pending[operation_id] = (proposal, approval, budget)
+            display = observation['monitor'].split('\\')[-1].replace('.', '')
+            remaining = int(max(0, proposal.deadline_monotonic-time.monotonic()))
+            reply = (f'Movimento único de 10 pixels para a direita, sem clique ou arrasto. '
+                     f'Monitor {display}; região segura {safe_rect}; tolerância 0; validade {remaining} s. '
+                     'A posição será observada novamente após sua autorização e deve permanecer na região segura.')
+            return {'status':'PENDING_APPROVAL','reply':reply,'logs':[],'task_id':budget.task_id,'pending_operation_id':operation_id,
+                    'physical_proposal':{'task_id':proposal.task_id,'proposal_id':proposal.proposal_id,'relative':True,'dx':10,'dy':0,
+                                         'safe_rect':safe_rect,'monitor':display,'tolerance':0,'expires_in_ms':remaining*1000},'dispatched':False}
+        if motor_proposal is not None and motor_proposal.get('direction_delegated') and not getattr(self._kernel, 'minimal_mode', False):
+            from adaptive_resource_controller import current_task_budget
+            budget = current_task_budget.get()
+            motor_proposal['task_id'] = budget.task_id if budget else None
+            return {'reply': 'A direção e distância foram delegadas; é necessário observar cursor, monitor e região segura antes de propor um deslocamento e solicitar aprovação específica.', 'logs': [], 'status': 'ACTION_BLOCKED', 'motor_stage': 'INTENT_RECOGNIZED', 'next_requirement': 'OBSERVATION_REQUIRED', 'motor_proposal': motor_proposal, 'dispatched': False}
+        if motor_proposal is not None and motor_proposal.get('direction_delegated'):
+            from adaptive_resource_controller import current_task_budget
+            budget = current_task_budget.get()
+            motor_proposal['task_id'] = budget.task_id if budget else None
+            kernel = getattr(self, '_kernel', None)
+            registry = getattr(kernel, '_runtime_tasks', None)
+            registry_lock = getattr(kernel, '_runtime_task_lock', None)
+            result = {'reply': 'Direção e distância delegadas. Aguardando autorização específica; antes de qualquer movimento serão necessárias observação atual e proposta física exata.', 'logs': [], 'status': 'AUTHORIZATION_REQUIRED', 'motor_stage': 'INTENT_RECOGNIZED', 'next_requirement': 'OBSERVATION_REQUIRED', 'motor_proposal': motor_proposal, 'dispatched': False}
+            if budget is not None and registry is not None and registry_lock is not None:
+                pending = {**motor_proposal, 'dx': None, 'dy': None}
+                operation_id = budget.begin_pending_motor(pending)
+                budget.cancellation_event = threading.Event()
+                result['pending_operation_id'] = operation_id
+                motor_proposal['operation_id'] = operation_id
+                result['reply'] += f" Tarefa {budget.task_id}; proposta {operation_id}."
+            else:
+                result['status'] = 'ACTION_BLOCKED'
+                result['reply'] = 'Registro de tarefa indisponível; nenhuma ação autorizável.'
+            return result
         if motor_proposal is not None:
             from adaptive_resource_controller import current_task_budget
             task_budget = current_task_budget.get()
@@ -1011,6 +1151,7 @@ class BrainnetBridge:
         if return_result:
             return result
         text = result.text.strip()
+        _conversation_finish_reason.set(getattr(result, 'finish_reason', None))
         if getattr(result, 'finish_reason', None) in ('length', 'max_tokens'):
             text += '\n\n⚠️ Resposta interrompida pelo limite de geração.'
         return text
@@ -1452,8 +1593,6 @@ class BrainnetBridge:
                 return {"reply": corpo_st, "logs": []}
             return {"reply": "⚠️ Harvester offline.", "logs": []}
         if p_norm in ("/rem status", "/sono status"):
-            if not self._kernel._rem_maintenance_enabled:
-                return {"reply": "Manutenção REM desativada neste perfil de estabilização.", "logs": [], "status": "REM_DISABLED"}
             st_sono = "😴 Dormindo (Processando em segundo plano)" if self._kernel.esta_dormindo else "⚡ Acordada (Atenta ao operador)"
             inatividade_s = int(time.time() - self._kernel.ultimo_toque_ai)
             return {
@@ -1466,7 +1605,14 @@ class BrainnetBridge:
             }
 
         if p_norm.startswith("/rem"):
-            return {"reply": "Manutenção REM desativada neste perfil de estabilização.", "logs": [], "status": "REM_DISABLED"}
+            if not getattr(self._kernel, 'rem_maintenance_enabled', False):
+                return {'reply': 'Manutenção REM desativada; requer revisão e autorização específica.', 'logs': [], 'status': 'UNAVAILABLE'}
+            def _rem_th():
+                self._kernel.rem_engine.execute_full_rem_cycle()
+                self._kernel.rem_engine.dream_and_immunize_ui_drifts(self._kernel.vsa)
+            threading.Thread(target=_rem_th, daemon=True).start()
+            self._falar_seguro("Sono REM e vacinação estocástica iniciados.")
+            return {"reply": "🌙 **Sono REM Ativado**: Poda sináptica e vacina de UI iniciadas.", "logs": []}
 
         if p_norm in ("/code", "/code on"):
             self._modo_coder_ativo = True
@@ -1854,6 +2000,8 @@ class BrainnetBridge:
             return {"reply": f"Processamento causal: {prompt_raw} ({ex})", "logs": [{"level": "ERROR", "core": "Kernel", "msg": str(ex)}]}
 
     def list_skills(self) -> List[Dict[str, Any]]:
+        if getattr(self._kernel, 'minimal_mode', False):
+            return []
         self._kernel.skill_loader.sync_skills(force=True)
         skills = []
         for name, meta in self._kernel.skill_registry.items():
@@ -1865,6 +2013,110 @@ class BrainnetBridge:
             if native["id"] not in ids:
                 skills.insert(0, dict(native))
         return skills
+
+    def record_p3_roundtrip(self, task_id, status, duration_ms):
+        if not getattr(self._kernel, 'minimal_mode', False):
+            return {'ok': False}
+        if not isinstance(task_id, str) or len(task_id) != 32 or status != 'AUTHORIZATION_REQUIRED' or type(duration_ms) not in (int, float) or not 0 <= duration_ms <= 60000:
+            return {'ok': False}
+        with self._kernel._runtime_task_lock:
+            if task_id not in self._kernel._runtime_tasks:
+                return {'ok': False}
+        logger.info('[P3_GUI] pid=%s task_id=%s status=%s roundtrip_ms=%.3f', os.getpid(), task_id, status, duration_ms)
+        return {'ok': True}
+
+    def _dispatch_direct_p4_move(self, proposal, approval, budget):
+        """Dispatch the bounded P4.4 move through the existing physical path."""
+        from execution_authority import authorization_scope
+        if not self._kernel.loop or not self._kernel.loop.is_running():
+            return {'status':'ACTION_BLOCKED','code':'KERNEL_UNAVAILABLE',
+                    'reply':'Kernel mínimo indisponível; nenhum movimento executado.','logs':[],'dispatched':False}
+        token = threading.Event()
+        async def dispatch():
+            with authorization_scope(token):
+                return await self._kernel.bridge.dispatch(
+                    'mouse_move_physical', {'proposal':proposal, 'approval':approval}, timeout_sec=10)
+        future = None
+        try:
+            future = asyncio.run_coroutine_threadsafe(dispatch(), self._kernel.loop)
+            command = future.result(timeout=15)
+            outcome = command.result if isinstance(command.result, dict) else {'status':'ACTION_FAILED','code':'DISPATCH_FAILED'}
+            status = outcome.get('status', 'ACTION_FAILED')
+            before, target, after = outcome.get('before'), outcome.get('target'), outcome.get('after')
+            if status == 'EFFECT_VERIFIED':
+                reply = f'Movi o mouse 10 pixels para a {"direita" if target[0] > before[0] else "esquerda"}.'
+            else:
+                reply = f'Movimento não confirmado ({outcome.get("code", status)}); nenhum novo movimento será tentado.'
+            return {'status':status, 'code':outcome.get('code', status), 'reply':reply, 'logs':[],
+                    'task_id':proposal.task_id, 'proposal_id':proposal.proposal_id,
+                    'before':before, 'target':target, 'after':after,
+                    'latency_ms':outcome.get('latency_ms'), 'dispatched':status not in ('ACTION_BLOCKED', 'ACTION_FAILED')}
+        except Exception as exc:
+            if future is not None:
+                future.cancel()
+            return {'status':'ACTION_FAILED','code':'DISPATCH_FAILED',
+                    'reply':f'Despacho não confirmado ({type(exc).__name__}); nenhum novo movimento será tentado.',
+                    'logs':[], 'task_id':proposal.task_id, 'proposal_id':proposal.proposal_id, 'dispatched':False}
+        finally:
+            token.set()
+
+    def approve_p4_proposal(self, task_id, operation_id):
+        # Local explicit UI action; coordinates come only from the server-side proposal.
+        if not getattr(self._kernel, 'minimal_mode', False) or os.getenv('BRAINNET_P4_PHYSICAL_PROPOSALS') != '1':
+            return {'status':'ACTION_BLOCKED','reply':'Aprovação física indisponível.','logs':[]}
+        if not isinstance(task_id,str) or not isinstance(operation_id,str):
+            return {'status':'ACTION_BLOCKED','reply':'Identificadores inválidos.','logs':[]}
+        with self._p4_lock:
+            pending = self._p4_pending.get(operation_id)
+        if pending is None:
+            return {'status':'ACTION_BLOCKED','reply':'Proposta ausente ou já consumida.','logs':[]}
+        proposal, approval, budget = pending
+        if task_id != proposal.task_id or operation_id != proposal.proposal_id or task_id != budget.task_id:
+            return {'status':'ACTION_BLOCKED','reply':'PROPOSAL_MISMATCH','logs':[]}
+        if time.monotonic() >= proposal.deadline_monotonic:
+            approval.cancel()
+            return {'status':'EXPIRED','reply':'Proposta expirada. Prepare uma nova proposta.','logs':[]}
+        if budget.cancellation_event.is_set() or not approval.approve_explicitly(operation_id):
+            return {'status':'ACTION_BLOCKED','reply':'Aprovação cancelada ou reutilizada.','logs':[]}
+        from execution_authority import authorization_scope
+        token = threading.Event()
+        async def dispatch():
+            from execution_authority import RelativePhysicalMoveProposal
+            with authorization_scope(token):
+                action = 'mouse_move_relative' if type(proposal) is RelativePhysicalMoveProposal else 'mouse_move_physical'
+                return await self._kernel.bridge.dispatch(action, {'proposal':proposal,'approval':approval}, timeout_sec=10)
+        future = None
+        try:
+            if not self._kernel.loop or not self._kernel.loop.is_running():
+                return {'status':'ACTION_BLOCKED','reply':'Kernel mínimo indisponível.','logs':[]}
+            future = asyncio.run_coroutine_threadsafe(dispatch(), self._kernel.loop)
+            command = future.result(timeout=15)
+            outcome = command.result if isinstance(command.result,dict) else {'status':'ACTION_FAILED','code':'DISPATCH_FAILED'}
+            status = outcome.get('status','ACTION_FAILED')
+            logger.info('[P4] task_id=%s proposal_id=%s bridge_status=%s result=%s', task_id, operation_id, command.status, status)
+            return {'status':status,'reply':f"{status}: {outcome}",'logs':[],'task_id':task_id,'proposal_id':operation_id}
+        except Exception as exc:
+            token.set()
+            if future is not None: future.cancel()
+            return {'status':'ACTION_FAILED','reply':f'Despacho não confirmado: {type(exc).__name__}', 'logs':[], 'task_id':task_id,'proposal_id':operation_id}
+        finally:
+            token.set()
+            with self._p4_lock:
+                self._p4_pending.pop(operation_id,None)
+
+    def cancel_p4_proposal(self, task_id, operation_id):
+        if not isinstance(task_id, str) or not isinstance(operation_id, str):
+            return {'status':'ACTION_BLOCKED','reply':'Identificadores inválidos.'}
+        with self._p4_lock:
+            pending = self._p4_pending.get(operation_id)
+            if pending is None or pending[0].task_id != task_id:
+                return {'status':'ACTION_BLOCKED','reply':'Proposta ausente ou incompatível.'}
+            proposal, approval, budget = pending
+            if not approval.cancel():
+                return {'status':'ACTION_BLOCKED','reply':'Cancelamento não confirmado; operação já iniciada ou finalizada.'}
+            budget.cancellation_event.set()
+            self._p4_pending.pop(operation_id, None)
+        return {'status':'CANCELLED','reply':'Proposta cancelada; nenhum movimento autorizado.'}
 
     def get_logs(self) -> List[Dict[str, Any]]:
         return list(ring_handler.records)
@@ -2022,9 +2274,16 @@ if __name__ == "__main__":
     win_x = int((screen_w - win_w) / 2)
     win_y = int((screen_h - win_h) / 2)
 
+    if kernel.minimal_mode:
+        p3_port = int(os.getenv('BRAINNET_MINIMAL_GUI_PORT', '5197'))
+        if not 1024 <= p3_port <= 65535:
+            raise ValueError('Porta inválida para perfil mínimo')
+        shell_url = f"http://127.0.0.1:{p3_port}"
+    else:
+        shell_url = "http://localhost:5173"
     window = webview.create_window(
-        title="BRAINNET v7 - Master Shell",
-        url="http://localhost:5173",
+        title="BRAINNET v7 - Master Shell (Kernel mínimo experimental)" if kernel.minimal_mode else "BRAINNET v7 - Master Shell",
+        url=shell_url,
         js_api=bridge,
         transparent=False,
         frameless=False,
@@ -2037,10 +2296,35 @@ if __name__ == "__main__":
     )
     bridge._window = window
 
+    shutdown_guard = threading.Lock()
+    shutdown_started = threading.Event()
+    def shutdown_minimal():
+        if not kernel.minimal_mode:
+            return
+        with shutdown_guard:
+            if shutdown_started.is_set():
+                return
+            shutdown_started.set()
+            logger.info('[P4_SHUTDOWN] started pid=%s', os.getpid())
+            with bridge._p4_lock:
+                for _, approval, budget in bridge._p4_pending.values():
+                    approval.cancel()
+                    budget.cancellation_event.set()
+            kernel.is_running = False
+            if kernel.loop and kernel.loop.is_running():
+                kernel.loop.call_soon_threadsafe(lambda: None)
+            t.join(timeout=3.0)
+            remaining = sum(1 for worker in kernel.bridge._workers if not worker.done())
+            logger.info('[P4_SHUTDOWN] completed=%s kernel_thread_alive=%s remaining_workers=%s',
+                        not t.is_alive() and remaining == 0, t.is_alive(), remaining)
+    if kernel.minimal_mode:
+        window.events.closing += shutdown_minimal
     try:
         webview.start(debug=False, private_mode=False)
     finally:
-        if os.getenv('BRAINNET_ADAPTIVE_OBSERVE') == '1':
+        if kernel.minimal_mode:
+            shutdown_minimal()
+        elif os.getenv('BRAINNET_ADAPTIVE_OBSERVE') == '1':
             kernel.is_running = False
             t.join(timeout=4.0)
             if t.is_alive():

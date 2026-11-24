@@ -6,6 +6,10 @@ def parse_supervised_mouse_move(text):
     """Parse a small relative move as a proposal, never as authorization."""
     if not isinstance(text, str):
         return None
+    if re.fullmatch(r'\s*(?:mova|mover|movimente)\s+o\s+mouse\s+em\s+qualquer\s+dire[cç][aã]o\s*[.!]?\s*', text, re.I):
+        return {'action': 'MOUSE_MOVE', 'direction_delegated': True,
+                'distance_delegated': True, 'maximum_distance': 20,
+                'click': False, 'execution_authorized': False, 'status': 'NEEDS_OBSERVATION'}
     match = re.fullmatch(r'\s*(?:mova|mover|movimente)\s+o\s+mouse\s+(?:lentamente\s+)?(\d{1,3})\s+p[ií]xels?\s+para\s+(?:a\s+)?(direita|esquerda|cima|baixo)\s*,?\s*sem\s+clicar\s*[.!]?\s*', text, re.I)
     if not match:
         return None

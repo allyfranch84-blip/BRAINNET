@@ -67,16 +67,21 @@ class PerceptionEye:
             return (rect.left, rect.top, w, h)
         return (0, 0, 1920, 1080)
 
-    def scan_uia_properties(self, hwnd: int, *, max_controls: int = 1000) -> List[Dict[str, Any]]:
+    def scan_uia_properties(self, hwnd: int, *, max_controls: int = 1000,
+                            include_sensitive: bool = True) -> List[Dict[str, Any]]:
         """Read current UIA properties in this thread; never return COM objects.
 
-        Unknown/unavailable properties remain None. No cached element, screen
+        Unknown/unavailable properties remain None. When include_sensitive is
+        false, Name and AutomationId are not requested from the UIA provider.
+        No cached element, screen
         coordinate, or positive result from this read authorizes a later action.
         """
         if not hwnd or not HAS_UIA_NATIVE:
             return []
         if isinstance(max_controls, bool) or not isinstance(max_controls, int) or not 1 <= max_controls <= 5000:
             raise ValueError('invalid max_controls')
+        if type(include_sensitive) is not bool:
+            raise ValueError('invalid include_sensitive')
 
         def read(fn):
             try: return fn()
@@ -100,8 +105,8 @@ class PerceptionEye:
                     pattern = read(getter)
                     # A failed query is unknown, not evidence of unsupported behavior.
                     return True if pattern is not None and getattr(pattern, 'pattern', None) is not None else None
-                out.append({'name': read(lambda: control.Name),
-                    'automation_id': read(lambda: control.AutomationId),
+                out.append({'name': read(lambda: control.Name) if include_sensitive else None,
+                    'automation_id': read(lambda: control.AutomationId) if include_sensitive else None,
                     'control_type': read(lambda: control.ControlTypeName),
                     'process_id': read(lambda: control.ProcessId), 'runtime_id': runtime,
                     'is_enabled': read(lambda: control.IsEnabled),

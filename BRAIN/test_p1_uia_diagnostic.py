@@ -24,7 +24,7 @@ def test_chat_refuses_implicit_foreground_and_unavailable_scanner():
 
 
 def test_chat_empty_list_never_claims_observed():
-    window = {'pid': 20, 'started': 123.0, 'rect': (0, 0, 100, 100)}
+    window = {'hwnd': 42, 'pid': 20, 'started': 123.0, 'rect': (0, 0, 100, 100)}
     bridge = bridge_with(Mock(), Mock(return_value=[]))
     with patch('uia_chat_readonly.inspect_window', return_value=window), patch('perception_eye.HAS_UIA_NATIVE', True):
         result = bridge.send_command('/uia scan 42 20')
@@ -33,7 +33,7 @@ def test_chat_empty_list_never_claims_observed():
 
 
 def test_chat_explicit_window_revalidates_and_redacts_names():
-    window = {'pid': 20, 'started': 123.0, 'rect': (0, 0, 100, 100)}
+    window = {'hwnd': 42, 'pid': 20, 'started': 123.0, 'rect': (0, 0, 100, 100)}
     foreground = Mock(return_value={'hwnd': 999, 'pid': 99})
     scan = Mock(return_value=[{'name': 'CONFIDENCIAL', 'control_type': 'ButtonControl', 'rect': None}])
     bridge = bridge_with(foreground, scan)
@@ -41,7 +41,7 @@ def test_chat_explicit_window_revalidates_and_redacts_names():
         result = bridge.send_command('/uia scan 42 20')
     assert foreground.call_count == 0
     assert check.call_count == 2
-    scan.assert_called_once_with(42, max_controls=100)
+    scan.assert_called_once_with(42, max_controls=100, include_sensitive=False)
     assert result['status'] == 'OBSERVED'
     assert result['control_count'] == 1
     assert result['types'][0]['type'] == 'ButtonControl'
