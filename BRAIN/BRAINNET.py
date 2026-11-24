@@ -818,17 +818,40 @@ class BrainnetBridge:
             window = found['window']
             return {'status':'BOUND','reply':f"Contexto: {window['app']}, HWND {window['hwnd']}, PID {window['pid']}. Use /ui controls para observar os controles.",'logs':[]}
         if p_norm == '/ui controls':
-            from ui_motor_context import observe
+            from adaptive_resource_controller import current_task_budget
+            from execution_authority import authorization_scope
+            import win32gui
             with self._p4_lock:
                 window = self._ui_motor_window
             if window is None:
                 return {'status':'TARGET_REQUIRED','reply':'Selecione a janela com /ui context <aplicativo>.','logs':[]}
-            scene = observe(window,self._kernel.eye)
+            budget=current_task_budget.get()
+            if budget is None or not self._kernel.loop or not self._kernel.loop.is_running():
+                return {'status':'UNAVAILABLE','reply':'Kernel indisponível para observação ativa.','logs':[]}
+            foreground=win32gui.GetForegroundWindow()
+            token=budget.cancellation_event
+            async def scan_active():
+                with authorization_scope(token):
+                    return await self._kernel.bridge.dispatch('ui_observe_active', {
+                        'window':window,'expected_foreground':foreground,'deadline':budget.deadline_monotonic},
+                        timeout_sec=min(12,max(.01,budget.deadline_monotonic-time.monotonic())))
+            future=None
+            try:
+                budget.check_active()
+                future=asyncio.run_coroutine_threadsafe(scan_active(),self._kernel.loop)
+                command=future.result(timeout=min(14,max(.01,budget.deadline_monotonic-time.monotonic())))
+                scene=command.result if command.status=='completed' and isinstance(command.result,dict) else {'status':'SCAN_UNCONFIRMED'}
+            except Exception:
+                token.set()
+                if future is not None:
+                    future.cancel()
+                scene={'status':'SCAN_UNCONFIRMED'}
             if scene['status'] != 'OBSERVED':
-                return {'status':scene['status'],'reply':f"Controles UIA indisponíveis ({scene['status']}).",'logs':[]}
+                return {'status':scene['status'],'reply':f"Controles UIA indisponíveis ({scene.get('code',scene['status'])}). Foco atual: {scene.get('observed_focus')}; alvo: {window['hwnd']}.",'logs':[]}
             names = [f"{c['name']} ({c['type'].removesuffix('Control')})" for c in scene['controls']]
             shown = names[:60]
-            return {'status':'OBSERVED','reply':f"{window['app']}: {len(names)} controles nomeados, visíveis e habilitados (de {scene.get('raw_count',0)} elementos UIA lidos).\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else ''),'logs':[]}
+            rejected = '; '.join(f"{k}: {v}" for k,v in scene.get('rejection_counts',{}).items())
+            return {'status':'OBSERVED','reply':f"{window['app']} em primeiro plano: {len(names)} controles elegíveis (de {scene.get('raw_count',0)} elementos UIA).\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else '') + f'\nDescartados: {rejected or "nenhum"}.','logs':[]}
         if p_norm == '/motor status':
             from assistant_prompts import MODELO_PARSER
             from urllib.request import urlopen
@@ -2167,14 +2190,21 @@ class BrainnetBridge:
                     self._ui_motor_window=window
                 return {'status':'EFFECT_VERIFIED','reply':f"{window['app']} aberto e verificado; contexto definido automaticamente (HWND {window['hwnd']}, PID {window['pid']}). Use /ui controls.",'logs':[],'dispatched':outcome['dispatched']}
             return {'status':outcome['status'],'reply':f"Abertura de {app}: {outcome['code']}.",'logs':[],'dispatched':outcome['dispatched']}
-        if not same_context(initial, observe_physical_monitor()) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
-            return {'status':'ACTION_BLOCKED','reply':'Cursor ou desktop mudou durante a interpretação. Nenhuma ação executada.',
-                    'logs':[], 'dispatched':False}
-
         if plan['steps'][0]['action'] in ('move_to','click_target'):
             if ui_window is None or not ui_foreground:
                 return {'status':'TARGET_REQUIRED','reply':'Selecione uma janela aberta com /ui context <aplicativo> antes de interagir com um objeto.','logs':[],'dispatched':False}
             step = plan['steps'][0]
+            # Object-relative intent does not depend on the pre-inference cursor.
+            # Re-anchor once after planning, but never during native execution.
+            import win32gui
+            foreground_now=win32gui.GetForegroundWindow()
+            if foreground_now not in (ui_foreground,ui_window['hwnd']):
+                return {'status':'ACTION_BLOCKED','reply':'Outra janela recebeu o foco durante a interpretação. Nenhuma ação executada.','logs':[],'dispatched':False}
+            initial=observe_physical_monitor()
+            time.sleep(.10)
+            budget.check_active()
+            if not same_context(initial,observe_physical_monitor()) or win32gui.GetForegroundWindow()!=foreground_now:
+                return {'status':'ACTION_BLOCKED','reply':'Mouse ou foco ainda em uso. Nenhuma ação executada. Envie o comando e aguarde sem clicar.','logs':[],'dispatched':False}
             token = budget.cancellation_event
             async def send_target():
                 with authorization_scope(token):
@@ -2208,10 +2238,19 @@ class BrainnetBridge:
                     reply += f" Foco inicial: {outcome.get('expected_focus',ui_foreground)}; atual: {outcome.get('observed_focus')}; janela-alvo: {ui_window['hwnd']}. O foco precisa permanecer na BRAINNET ou na janela selecionada."
 
                 if code in ('TARGET_NOT_FOUND','TARGET_AMBIGUOUS'):
-                    reply += f" Controles elegíveis: {outcome.get('control_count')}; elementos UIA: {outcome.get('raw_count')}. Consulte /ui controls e informe o nome exato."
+                    reply += f" Controles elegíveis: {outcome.get('control_count')}; elementos UIA: {outcome.get('raw_count')}."
+                    if outcome.get('rejected_matches'):
+                        reply += ' Encontrados mas descartados: ' + '; '.join(f"{c['name']} ({c['reason']})" for c in outcome['rejected_matches'])
+                    if outcome.get('similar_names'):
+                        reply += ' Nomes semelhantes: ' + ', '.join(outcome['similar_names'])
+                    reply += ' Consulte /ui controls.'
             logger.info('[UI_MOTOR] task_id=%s status=%s code=%s waypoints=%s',budget.task_id,status,code,outcome.get('waypoints'))
             return {'status':status,'code':code,'reply':reply + f' Origem: {source_label}.','logs':[],
                     'dispatched':outcome.get('dispatched'), 'motor_results':[outcome],'motor_source':source}
+
+        if not same_context(initial, observe_physical_monitor()) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
+            return {'status':'ACTION_BLOCKED','reply':'Cursor ou desktop mudou durante a interpretação. Nenhuma ação executada.',
+                    'logs':[], 'dispatched':False}
 
         # Preflight the complete geometry before sending the first operation.
         cursor = tuple(initial['cursor'])
