@@ -21,7 +21,7 @@ Vocabulário:
 {"action":"scroll","direction":"up|down","count":1}
 Movimentos usam pixels relativos (1 a 150 por passo); distância não especificada: 150.
 Para deslocamentos maiores, decomponha em passos de até 150 pixels, no máximo 8 passos.
-Use any somente quando a direção for delegada.
+Use any obrigatoriamente quando o usuário delegar a direção (qualquer direção, direção aleatória); nunca escolha right por conta própria.
 Clique ou role na posição atual somente quando essa intenção for explícita; clique simples
 sem alvo pode usar o cursor atual se o pedido for claramente uma ordem de clique.
 Nunca transforme perguntas, exemplos, citações, negações, instruções para explicar,
@@ -30,6 +30,7 @@ Alvos nomeados (botão, objeto, aplicativo), coordenadas absolutas, arrasto,
 digitação e tarefas que misturam ações não suportadas: unsupported para o plano inteiro.
 Não invente passos, alvos ou cliques. Use no máximo 8 passos.
 Exemplos:
+"mova o mouse em qualquer direção" -> {"status":"execute","steps":[{"action":"move","direction":"any","distance":150}]}
 "desloque o ponteiro para cima" -> {"status":"execute","steps":[{"action":"move","direction":"up","distance":150}]}
 "vá 100 pixels à esquerda e depois 50 para baixo" -> {"status":"execute","steps":[{"action":"move","direction":"left","distance":100},{"action":"move","direction":"down","distance":50}]}
 "clique com o botão direito na posição atual" -> {"status":"execute","steps":[{"action":"click","button":"right","count":1}]}
