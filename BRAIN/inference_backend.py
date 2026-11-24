@@ -50,6 +50,7 @@ class InferenceRequest:
     request_id: Optional[str] = None
     max_tokens: int = 256
     context_tokens: Optional[int] = None
+    json_output: bool = False
 
 
 @dataclass(frozen=True)
@@ -216,6 +217,9 @@ class HTTPInferenceBackend(InferenceBackend):
                 if isinstance(request.context_tokens, bool) or not isinstance(request.context_tokens, int) or request.context_tokens <= 0:
                     raise ConfigurationError("Contexto invalido")
                 body['options']['num_ctx'] = request.context_tokens
+            if request.json_output:
+                body["format"] = "json"
+                body["options"]["temperature"] = 0
             body.update({"messages": request.messages} if chat else {"prompt": request.prompt})
         else:
             path = "/v1/chat/completions" if chat else "/completion"
