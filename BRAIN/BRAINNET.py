@@ -495,7 +495,7 @@ class BrainnetBridge:
 
     def copy_text(self, text: str) -> Dict[str, Any]:
         try:
-            subprocess.run("clip", input=str(text or "").encode("utf-16le"), check=False, shell=True)
+            subprocess.run(["clip.exe"], input=str(text or "").encode("utf-16le"), check=True, timeout=5)
             return {"ok": True}
         except Exception as e:
             return {"ok": False, "log": str(e)}
@@ -780,6 +780,34 @@ class BrainnetBridge:
         prompt_raw = text.strip()
         p_low = prompt_raw.lower()
         p_norm = re.sub(r"\s+", " ", p_low).strip()
+        # Local chat functions must work even without model or full kernel.
+        if p_norm in ('/copy all', '/copie all', '/copy tudo', '/copie tudo', '/copy-all', '/copietudo', '/copy', '/copie'):
+            history = list(self._chat_history)
+            if p_norm in ('/copy','/copie'):
+                history = history[-2:]
+            if not history:
+                return {'reply':'O histórico de conversa ainda está vazio.', 'logs':[]}
+            lines = ['=== HISTÓRICO DE CONVERSA - BRAINNET v7 ===']
+            for msg in history:
+                author = 'USUÁRIO' if msg['role'] == 'user' else 'BRAINNET'
+                lines.append(f"\n[{author}]:\n{msg['text']}")
+            result = self.copy_text('\n'.join(lines))
+            if result.get('ok') is not True:
+                return {'status':'ACTION_FAILED','reply':'Não foi possível copiar o histórico.','logs':[]}
+            return {'status':'COPIED','reply':f'Histórico copiado ({len(history)} mensagens).','logs':[]}
+        if p_norm == '/motor status':
+            from assistant_prompts import MODELO_PARSER
+            from urllib.request import urlopen
+            import json
+            endpoint = OLLAMA_GENERATE_URL.removesuffix('/api/generate')
+            model = os.getenv('BRAINNET_MOTOR_MODEL', MODELO_PARSER)
+            try:
+                with urlopen(endpoint+'/api/tags', timeout=3) as response:
+                    models = [m.get('name') for m in json.load(response).get('models', [])]
+                ready = model in models
+                return {'status':'READY' if ready else 'UNAVAILABLE','reply':f'Ollama: conectado em {endpoint}. Modelo {model}: {"instalado" if ready else "não encontrado"}. Modelos locais: {", ".join(str(m) for m in models) or "nenhum"}.','logs':[]}
+            except Exception as exc:
+                return {'status':'UNAVAILABLE','reply':f'Ollama indisponível em {endpoint} ({type(exc).__name__}). Modelo: {model}. Movimento básico continua disponível.','logs':[]}
         if p_norm == '/kernel status':
             kernel = self._kernel
             bridge = kernel.bridge
@@ -988,28 +1016,6 @@ class BrainnetBridge:
                 self._window.evaluate_js("if(document.activeElement) document.activeElement.blur();")
             except Exception:
                 pass
-
-        # COMANDOS DE CLIPBOARD
-        if p_norm in ("/copy all", "/copie all", "/copy tudo", "/copie tudo", "/copy-all", "/copietudo"):
-            if not self._chat_history:
-                return {"reply": "📋 O histórico de conversa ainda está vazio.", "logs": []}
-            linhas = ["=== HISTÓRICO DE CONVERSA - BRAINNET v7 ==="]
-            for msg in self._chat_history:
-                autor = "USUÁRIO" if msg["role"] == "user" else "BRAINNET"
-                linhas.append(f"\n[{autor}]:\n{msg['text']}")
-            conteudo = "\n".join(linhas)
-            self.copy_text(conteudo)
-            self._falar_seguro("Todo o histórico foi copiado.")
-            return {"reply": f"📋 **Histórico completo copiado!** ({len(self._chat_history)} mensagens prontas para colar).", "logs": []}
-
-        if p_norm in ("/copy", "/copie"):
-            if len(self._chat_history) < 2:
-                return {"reply": "📋 Não há mensagens anteriores suficientes gravadas no histórico para copiar.", "logs": []}
-            ultimas = self._chat_history[-2:]
-            linhas = [f"[{'USUÁRIO' if m['role']=='user' else 'BRAINNET'}]:\n{m['text']}\n" for m in ultimas]
-            self.copy_text("\n".join(linhas).strip())
-            self._falar_seguro("As duas últimas mensagens foram copiadas.")
-            return {"reply": "📋 **Últimas 2 mensagens copiadas para o Clipboard!**", "logs": []}
 
         # Conversational messages must not replace the last operational task.
         operational = (not prompt_raw.startswith('/') and
@@ -2049,7 +2055,7 @@ class BrainnetBridge:
         """Interpret language once, then execute only validated native motor primitives."""
         from adaptive_resource_controller import current_task_budget, BudgetExhausted
         from assistant_prompts import MODELO_PARSER
-        from inference_backend import HTTPInferenceBackend, InferenceRequest
+        from inference_backend import HTTPInferenceBackend, InferenceRequest, BackendUnavailable, ModelUnavailable, InferenceTimeout
         from motor_intent import SYSTEM_PROMPT, parse_response, resolve_move, MAX_DISTANCE
         from capability_lab import observe_physical_monitor, observe_cursor_monitors
         from execution_authority import PhysicalMoveProposal, PhysicalMoveApproval, authorization_scope
@@ -2082,11 +2088,21 @@ class BrainnetBridge:
                 plan = parse_response(result.text)
             except Exception as exc:
                 budget.finish_inference(operation, confirmed=False)
-                return {'status':'UNAVAILABLE','reply':f'Interpretação motora indisponível ({type(exc).__name__}); nenhuma ação executada.',
-                        'logs':[], 'dispatched':False}
-            budget.finish_inference(operation, reported_tokens=result.output_tokens)
-            budget.check_active()
-            budget.record_inference('ollama', model, 'INFERENCE_FINISHED')
+                budget.record_inference('ollama', model, 'INFERENCE_FAILED')
+                budget.check_active()
+                logger.warning('[MOTOR] endpoint=%s model=%s error=%s', OLLAMA_GENERATE_URL, model, exc)
+                # Keep the previously verified capability available without inference.
+                # No general language interpretation is claimed in this fallback.
+                if isinstance(exc, (BackendUnavailable, ModelUnavailable, InferenceTimeout)) and key == 'mova o mouse em qualquer direção':
+                    plan = {'status':'execute','steps':[{'action':'move','direction':'any','distance':MAX_DISTANCE}]}
+                    source = 'BUILTIN_VERIFIED_CAPABILITY'
+                else:
+                    return {'status':'UNAVAILABLE','reply':f'Interpretação motora indisponível ({type(exc).__name__}) em {OLLAMA_GENERATE_URL}. Consulte /motor status. Nenhuma ação executada.',
+                            'logs':[], 'dispatched':False}
+            else:
+                budget.finish_inference(operation, reported_tokens=result.output_tokens)
+                budget.check_active()
+                budget.record_inference('ollama', model, 'INFERENCE_FINISHED')
         if plan['status'] != 'execute':
             reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
                      else 'Não identifiquei uma ordem motora explícita.')
@@ -2156,7 +2172,8 @@ class BrainnetBridge:
                 self._last_motor_direction = previous
                 if len(self._motor_plan_cache) >= 64:
                     self._motor_plan_cache.pop(next(iter(self._motor_plan_cache)))
-                self._motor_plan_cache[key] = plan
+                if source != 'BUILTIN_VERIFIED_CAPABILITY':
+                    self._motor_plan_cache[key] = plan
         logger.info('[MOTOR] task_id=%s source=%s steps=%s all_moves_verified=%s', budget.task_id, source, len(evidence), all_moves)
         return {'status':'EFFECT_VERIFIED' if all_moves else 'INPUT_SENT',
                 'reply':(f'Executei e verifiquei {len(evidence)} movimento(s). Cursor: {initial["cursor"]} → {cursor}.'
