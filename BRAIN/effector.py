@@ -103,6 +103,15 @@ class Effector:
                         raise PermissionError('MOUSE_BUTTON_HELD')
                     point = (round(start[0] + (x - start[0]) * index / frames),
                              round(start[1] + (y - start[1]) * index / frames))
+                    if proposal.display_topology:
+                        from capability_lab import observe_physical_monitor
+                        from display_motor_geometry import monitor_at
+                        observed=observe_physical_monitor()
+                        if (observed.get('status')!='OBSERVED'
+                                or observed.get('cursor')!=last
+                                or observed.get('display_topology')!=proposal.display_topology
+                                or monitor_at(point,proposal.display_topology) is None):
+                            return False
                     if not user32.SetPhysicalCursorPos(*point):
                         return False
                     last = point
