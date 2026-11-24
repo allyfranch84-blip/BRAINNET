@@ -2101,7 +2101,7 @@ export default function MasterShell() {
       executionRef.current.processing = false;
       setIsProcessing(false);
       setVoiceOn(false);
-      pushMessage({ role: "ai", text: "Execução e áudio interrompidos." });
+      pushMessage({ role: "ai", text: result?.reply || "Cancelamento solicitado; encerramento ainda não confirmado." });
     } catch (error) {
       pushLog({ level: "ERROR", core: "Stop", msg: error?.message || String(error) });
       pushMessage({ role: "ai", text: `Não foi possível confirmar a parada: ${error?.message || error}` });
