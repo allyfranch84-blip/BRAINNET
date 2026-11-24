@@ -101,3 +101,30 @@ def test_app_launch_schema_accepts_only_supported_application():
     assert validate_plan({'status':'execute','steps':[{'action':'open_app','target':'paint'}]})
     with pytest.raises(ValueError):
         validate_plan({'status':'execute','steps':[{'action':'open_app','target':'cmd.exe'}]})
+
+
+def test_focus_handoff_from_own_chat_to_selected_window():
+    import os
+    from ui_motor_context import activate_selected_window
+    from execution_authority import authorization_scope
+    window={'hwnd':1,'pid':10,'started':100,'app':'test.exe'}
+    with authorization_scope(threading.Event()),patch('ui_motor_context.same_window',return_value=True), \
+         patch('win32gui.GetForegroundWindow',side_effect=[99,1]), \
+         patch('win32process.GetWindowThreadProcessId',return_value=(1,os.getpid())), \
+         patch('win32gui.SetForegroundWindow') as focus:
+        result=activate_selected_window(window,99,deadline=time.monotonic()+5)
+    assert result['status']=='READY' and result['observed_focus']==1
+    focus.assert_called_once_with(1)
+
+
+def test_scan_reports_filtered_controls_without_allowing_them_as_targets():
+    from ui_motor_context import observe
+    window={'hwnd':1,'pid':10,'started':100,'app':'test.exe'}
+    eye=Mock()
+    eye.scan_uia_properties.return_value=[row(),row('Pincéis',runtime=(3,4),is_offscreen=True)]
+    with patch('ui_motor_context.same_window',return_value=True):
+        scene=observe(window,eye,foreground=True)
+    assert scene['raw_count']==2 and len(scene['controls'])==1
+    assert scene['rejection_counts']['fora da vista']==1
+    assert scene['rejected'][0]['name']=='Pincéis'
+    assert resolve_target(scene['controls'],'Pincéis')['status']=='TARGET_NOT_FOUND'
