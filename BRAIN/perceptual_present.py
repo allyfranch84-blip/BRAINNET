@@ -196,3 +196,39 @@ class PerceptualPresent:
                 'focus_state':'TRANSITION' if foreground==0 else 'UNKNOWN' if foreground is None else 'OBSERVED',
                 'windows':windows,'external_foreground':live_external,'last_external':last,
                 'channels':channels,'action_authorized':False}
+
+
+def describe_monitor(snapshot, number):
+    """Describe observed window inventory, not pixels or window contents."""
+    channels=snapshot.get('channels',{})
+    spatial=channels.get('spatial',{})
+    inventory=channels.get('windows',{})
+    if spatial.get('status')!='OBSERVED' or inventory.get('status') not in ('OBSERVED','PARTIAL'):
+        return {'status':'UNAVAILABLE','reply':'Inventário ou geometria do monitor indisponível.'}
+    data=spatial.get('value') or {}
+    matches=[m for m in data.get('monitors',[]) if str(m.get('device','')).upper().endswith('DISPLAY'+str(number))]
+    if len(matches)!=1:
+        return {'status':'UNAVAILABLE','reply':f'DISPLAY{number} não identificado unicamente.'}
+    monitor=matches[0]
+    left,top,right,bottom=monitor['rect']
+    windows=[]
+    for w in snapshot.get('windows',[]):
+        if w.get('minimized') is not False:
+            continue
+        x0,y0,x1,y1=w['rect']
+        width=min(right,x1)-max(left,x0)
+        height=min(bottom,y1)-max(top,y0)
+        if width<32 or height<32:
+            continue
+        windows.append((w,width*height))
+    windows.sort(key=lambda x:x[0]['z_index'])
+    lines=[f'DISPLAY{number}: {right-left} × {bottom-top}; região física {monitor["rect"]}.']
+    if data.get('cursor_monitor')==monitor['device']:
+        lines.append(f'Cursor neste monitor: {data.get("cursor",{}).get("cursor")}.')
+    lines.append('Janelas com geometria sobreposta ao monitor (ordem Z observada; podem estar encobertas):')
+    for w,_ in windows[:20]:
+        lines.append(f'{w["app"]} | HWND {w["hwnd"]}' + (' | foco' if w['hwnd']==snapshot.get('foreground') else ''))
+    if not windows:
+        lines.append('Nenhuma janela elegível encontrada no inventário.')
+    lines.append('Conteúdo visual e oclusão não inspecionados.')
+    return {'status':'OBSERVED','reply':'\n'.join(lines)}
