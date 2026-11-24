@@ -92,8 +92,8 @@ class PerceptualPresent:
             spatial=self._channels.get('spatial',{})
             windows=self._channels.get('windows',{})
             if (spatial.get('status')=='OBSERVED' and windows.get('status')=='OBSERVED'
-                    and ended-spatial.get('ended',0)<=self.max_age['spatial']
-                    and ended-windows.get('ended',0)<=self.max_age['windows']):
+                    and 0<=self.clock()-spatial.get('ended',0)<=self.max_age['spatial']
+                    and 0<=self.clock()-windows.get('ended',0)<=self.max_age['windows']):
                 focus=spatial['value'].get('foreground')
                 match=[w for w in windows['value'].get('windows',[]) if w['hwnd']==focus and not w['owned']]
                 if len(match)==1:
@@ -151,8 +151,12 @@ class PerceptualPresent:
             last=next((w for w in windows if (w['hwnd'],w['pid'],w['started'])==
                        (last['hwnd'],last['pid'],last['started']) and not w['minimized']),None)
         uia=channels['uia']
-        if uia['status']=='OBSERVED' and uia['value'].get('window',{}).get('hwnd')!=foreground:
-            uia['status']='CONTEXT_CHANGED'
+        if uia['status']=='OBSERVED':
+            uia_window=uia['value'].get('window')
+            if not uia_window:
+                uia['status']=uia['value'].get('status','UNAVAILABLE')
+            elif uia_window.get('hwnd')!=foreground or not any((w['hwnd'],w['pid'],w['started'])==(uia_window['hwnd'],uia_window['pid'],uia_window['started']) for w in windows):
+                uia['status']='CONTEXT_CHANGED'
         return {'version':version,'at':now,'foreground':foreground,
                 'focus_state':'TRANSITION' if foreground==0 else 'UNKNOWN' if foreground is None else 'OBSERVED',
                 'windows':windows,'external_foreground':live_external,'last_external':last,
