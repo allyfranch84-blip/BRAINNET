@@ -34,7 +34,7 @@ def test_minimal_profile_returns_proposal_and_blocks_rem():
             assert r['status']=='AUTHORIZATION_REQUIRED' and not r['dispatched']
             assert b.send_command('/rem')['status']=='UNAVAILABLE'
 
-def test_rem_old_contract_can_delete_before_missing_injection(tmp_path):
+def test_rem_missing_injection_preserves_memory(tmp_path):
     import sqlite3,time
     import pytest
     from rem_sleep_engine import REMSleepEngine
@@ -46,7 +46,7 @@ def test_rem_old_contract_can_delete_before_missing_injection(tmp_path):
     with pytest.raises(RuntimeError,match='injecao do pdag_engine'):
         engine.execute_full_rem_cycle()
     with sqlite3.connect(path) as db:
-        assert db.execute('SELECT count(*) FROM hmem_nodes').fetchone()[0]==0
+        assert db.execute('SELECT count(*) FROM hmem_nodes').fetchone()[0]==1
 
 def test_minimal_delegated_proposal_uses_same_task_without_dispatch():
     with patch.dict('os.environ',{'BRAINNET_MINIMAL':'1'}),patch('BRAINNET.FHRRHyperdimensionalEngine'), \
