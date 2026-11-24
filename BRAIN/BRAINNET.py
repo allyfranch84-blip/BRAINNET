@@ -833,6 +833,38 @@ class BrainnetBridge:
             check=self._send_command_impl('/checkup')
             context=self._send_command_impl('/context')
             return {'status':context['status'],'reply':check['reply']+'\n\n'+context['reply'],'logs':[]}
+        if p_norm.startswith('/memory recall '):
+            from pathlib import Path
+            from memory_recall import recall
+            query=prompt_raw[len('/memory recall '):].strip()
+            try:
+                outcome=recall(Path(__file__).resolve().parent,query)
+            except ValueError as exc:
+                return {'status':'ACTION_BLOCKED','reply':str(exc),'logs':[],'dispatched':False}
+            lines=['Recuperação histórica somente leitura; sem autorização de execução.']
+            for item in outcome['matches']:
+                lines.append(f"{item['table']} | {item['id']} | {item['label']} | correspondência lexical {item['lexical_score']:.2f}")
+            if not outcome['matches']:
+                lines.append('Nenhum registro correspondente encontrado nas fontes consultadas.')
+            for entry in outcome['sources']:
+                lines.append(f"{entry['table']}: {entry['status']} ({entry.get('scanned',0)} examinados)" + ('; limite atingido' if entry.get('possibly_truncated') else ''))
+            return {'status':outcome['status'],'reply':'\n'.join(lines),'memory_recall':outcome,'logs':[],'dispatched':False}
+        if p_norm.startswith('/memory read '):
+            from pathlib import Path
+            from memory_recall import read_record
+            args=prompt_raw[len('/memory read '):].strip().split(maxsplit=1)
+            if len(args)!=2:
+                return {'status':'ACTION_BLOCKED','reply':'Use /memory read <tabela> <ID>.','logs':[],'dispatched':False}
+            try:
+                outcome=read_record(Path(__file__).resolve().parent,*args)
+            except ValueError as exc:
+                return {'status':'ACTION_BLOCKED','reply':str(exc),'logs':[],'dispatched':False}
+            reply=f"Registro histórico: {outcome['status']}. Nenhuma ação executada."
+            if outcome['status']=='OBSERVED':
+                reply += f"\n{outcome['label']} | {outcome['id']}\n{outcome['payload'] or ''}"
+                if outcome['truncated']:
+                    reply += '\n[Conteúdo limitado a 4000 caracteres.]'
+            return {'status':outcome['status'],'reply':reply,'logs':[],'dispatched':False}
         if p_norm=='/memory audit':
             from pathlib import Path
             from memory_readonly_audit import audit_memory
