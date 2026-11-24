@@ -777,6 +777,20 @@ class BrainnetBridge:
         prompt_raw = text.strip()
         p_low = prompt_raw.lower()
         p_norm = re.sub(r"\s+", " ", p_low).strip()
+        if p_norm == '/kernel status':
+            kernel = self._kernel
+            bridge = kernel.bridge
+            loop = kernel.loop
+            workers = getattr(bridge, '_workers', ())
+            active_workers = sum(not worker.done() for worker in workers)
+            ready = bool(kernel.is_running and loop and loop.is_running()
+                         and getattr(bridge, '_running', False) and active_workers)
+            minimal = bool(kernel.minimal_mode)
+            direct = minimal and os.getenv('BRAINNET_P4_PHYSICAL_PROPOSALS') == '1' and os.getenv('BRAINNET_P4_DIRECT_MOVE') == '1'
+            return {'status': 'READY' if ready else 'UNAVAILABLE',
+                    'reply': f"Kernel real: {'pronto' if ready else 'indisponível'}; PID {os.getpid()}; perfil {'mínimo' if minimal else 'completo'}; workers ativos: {active_workers}; movimento direto configurado: {'sim' if direct else 'não'}.",
+                    'logs': [], 'pid': os.getpid(), 'minimal': minimal,
+                    'active_workers': active_workers, 'direct_move_enabled': direct}
         if getattr(self._kernel, 'minimal_mode', False) and not (p_norm.startswith('/uia scan') or parse_supervised_mouse_move(prompt_raw)):
             return {'reply': 'Capacidade indisponível no perfil mínimo experimental.', 'logs': [], 'status': 'UNAVAILABLE'}
         manual = self._manual_capability_command(prompt_raw, p_norm)
@@ -2031,7 +2045,12 @@ class BrainnetBridge:
         if not self._kernel.loop or not self._kernel.loop.is_running():
             return {'status':'ACTION_BLOCKED','code':'KERNEL_UNAVAILABLE',
                     'reply':'Kernel mínimo indisponível; nenhum movimento executado.','logs':[],'dispatched':False}
-        token = threading.Event()
+        # Use the original command authority so Stop can revoke this queued move.
+        token = budget.cancellation_event
+        if token is not current_authorization() or token.is_set():
+            approval.cancel()
+            return {'status':'ACTION_BLOCKED','code':'COMMAND_REVOKED',
+                    'reply':'Comando cancelado; nenhum movimento executado.','logs':[],'dispatched':False}
         async def dispatch():
             with authorization_scope(token):
                 return await self._kernel.bridge.dispatch(
@@ -2043,6 +2062,8 @@ class BrainnetBridge:
             outcome = command.result if isinstance(command.result, dict) else {'status':'ACTION_FAILED','code':'DISPATCH_FAILED'}
             status = outcome.get('status', 'ACTION_FAILED')
             before, target, after = outcome.get('before'), outcome.get('target'), outcome.get('after')
+            logger.info('[P44_MOVE] task_id=%s status=%s code=%s before=%s target=%s after=%s latency_ms=%s',
+                        proposal.task_id, status, outcome.get('code'), before, target, after, outcome.get('latency_ms'))
             if status == 'EFFECT_VERIFIED':
                 reply = f'Movi o mouse 10 pixels para a {"direita" if target[0] > before[0] else "esquerda"}.'
             else:
@@ -2052,13 +2073,14 @@ class BrainnetBridge:
                     'before':before, 'target':target, 'after':after,
                     'latency_ms':outcome.get('latency_ms'), 'dispatched':status not in ('ACTION_BLOCKED', 'ACTION_FAILED')}
         except Exception as exc:
+            token.set()
+            approval.cancel()
             if future is not None:
                 future.cancel()
+            logger.warning('[P44_MOVE] task_id=%s dispatch_unconfirmed=%s', proposal.task_id, type(exc).__name__)
             return {'status':'ACTION_FAILED','code':'DISPATCH_FAILED',
                     'reply':f'Despacho não confirmado ({type(exc).__name__}); nenhum novo movimento será tentado.',
                     'logs':[], 'task_id':proposal.task_id, 'proposal_id':proposal.proposal_id, 'dispatched':False}
-        finally:
-            token.set()
 
     def approve_p4_proposal(self, task_id, operation_id):
         # Local explicit UI action; coordinates come only from the server-side proposal.
