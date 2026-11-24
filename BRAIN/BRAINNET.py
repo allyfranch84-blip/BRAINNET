@@ -2138,7 +2138,7 @@ class BrainnetBridge:
                         'logs':[], 'dispatched':bool(evidence), 'motor_results':evidence}
             if step['action'] == 'move':
                 proposal = PhysicalMoveProposal(budget.task_id, uuid.uuid4().hex, start, target,
-                            initial['monitor'], rect, 0, budget.deadline_monotonic, max_distance=MAX_DISTANCE)
+                            initial['monitor'], rect, 0, budget.deadline_monotonic, max_distance=MAX_DISTANCE, duration_ms=300)
                 approval = PhysicalMoveApproval(proposal)
                 if not approval.approve_explicitly(proposal.proposal_id):
                     return {'status':'PARTIAL' if evidence else 'ACTION_BLOCKED','reply':'Operação expirada; sequência interrompida.',
@@ -2164,7 +2164,10 @@ class BrainnetBridge:
                     outcome = {'status':'EFFECT_UNVERIFIED'}
                 accepted = outcome.get('status') == 'INPUT_SENT'
             evidence.append({'action':step['action'], 'status':outcome.get('status'), 'before':start,
-                             'target':target, 'after':outcome.get('after'), 'code':outcome.get('code')})
+                             'target':target, 'after':outcome.get('after'), 'code':outcome.get('code'),
+                             'direction':step.get('direction'), 'button':step.get('button'),
+                             'requested_count':outcome.get('requested_count'), 'sent_count':outcome.get('sent_count'),
+                             'latency_ms':outcome.get('latency_ms')})
             if not accepted:
                 failure_code = outcome.get('code') or outcome.get('status') or 'UNKNOWN'
                 logger.warning('[MOTOR_FAILURE] task_id=%s source=%s step=%s code=%s start=%s target=%s after=%s',
@@ -2182,9 +2185,21 @@ class BrainnetBridge:
                 if source != 'BUILTIN_VERIFIED_CAPABILITY':
                     self._motor_plan_cache[key] = plan
         logger.info('[MOTOR] task_id=%s source=%s steps=%s all_moves_verified=%s', budget.task_id, source, len(evidence), all_moves)
+        if all_moves:
+            route = ' → '.join(str(point) for point in [initial['cursor']] + [item['after'] for item in evidence])
+            summary = f'Executei e verifiquei {len(evidence)} movimento(s). Trajetória: {route}.'
+        else:
+            descriptions = []
+            for item in evidence:
+                if item['action'] == 'scroll':
+                    descriptions.append(f"scroll {item['direction']}: {item['sent_count']}/{item['requested_count']} eventos enviados")
+                elif item['action'] == 'click':
+                    descriptions.append(f"clique {item['button']}: {item['sent_count']}/{item['requested_count']} cliques enviados")
+                else:
+                    descriptions.append(f"movimento {item['before']} → {item['after']}")
+            summary = '; '.join(descriptions) + '. Efeito de cliques/rolagem no aplicativo ainda não verificado.'
         return {'status':'EFFECT_VERIFIED' if all_moves else 'INPUT_SENT',
-                'reply':(f'Executei e verifiquei {len(evidence)} movimento(s). Cursor: {initial["cursor"]} → {cursor}.'
-                         if all_moves else f'{len(evidence)} ação(ões) despachada(s); cliques/rolagem aceitos pelo sistema, efeito no aplicativo ainda não verificado.') + f' Origem: {source_label}.',
+                'reply':summary + f' Origem: {source_label}.',
                 'logs':[], 'dispatched':True, 'motor_results':evidence, 'motor_source':source}
 
     def _dispatch_direct_p4_move(self, proposal, approval, budget):
