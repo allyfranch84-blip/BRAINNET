@@ -1,0 +1,71 @@
+"""All tests are pure or mocked; no real cursor, click, scroll or model invocation."""
+import pytest
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
+
+from motor_intent import parse_response, resolve_move, validate_plan
+
+
+def test_geometry_covers_all_directions_and_preserves_monitor():
+    start, rect = (200,200), (0,0,500,500)
+    for direction, point in [('left',(50,200)),('right',(350,200)),('up',(200,50)),('down',(200,350))]:
+        assert resolve_move(start,rect,direction,150)[0] == point
+    assert resolve_move(start,rect,'any',150,previous='right',choose=lambda choices:choices[0])[1] != 'right'
+    with pytest.raises(ValueError):
+        resolve_move((20,20),rect,'left',150)
+
+
+def test_invalid_actions_and_nonexecution_are_rejected():
+    for step in [
+        {'action':'move','direction':'left','distance':True},
+        {'action':'move','direction':'right','distance':151},
+        {'action':'move','direction':'right','distance':150,'x':123},
+        {'action':'click','button':'invalid','count':1},
+        {'action':'scroll','direction':'up','count':11},
+        {'action':'shell','command':'example'},
+    ]:
+        with pytest.raises(ValueError):
+            validate_plan({'status':'execute','steps':[step]})
+    with pytest.raises(ValueError):
+        validate_plan({'status':'none','steps':[{'action':'click','button':'left','count':1}]})
+    with pytest.raises(ValueError):
+        parse_response('not json')
+
+
+def test_semantic_plan_executes_multiple_observed_movements_and_reuses_verified_plan():
+    from test_p44_direct_move import _bridge
+    state = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(200,200),'monitor':'DISPLAY','monitor_rect':(0,0,800,800)}
+    bridge,kernel,patches = _bridge(state)
+    def perform(proposal, approval, budget):
+        assert approval.consume(proposal,state)
+        state['cursor'] = proposal.target
+        return {'status':'EFFECT_VERIFIED','after':proposal.target}
+    response = SimpleNamespace(text='{"status":"execute","steps":[{"action":"move","direction":"up","distance":50},{"action":"move","direction":"left","distance":30}]}',finish_reason='stop',output_tokens=60)
+    try:
+        with patch.dict('os.environ',{'BRAINNET_MOTOR_SEMANTIC':'1'}), \
+             patch('capability_lab.observe_physical_monitor',side_effect=lambda: dict(state)), \
+             patch('inference_backend.HTTPInferenceBackend.chat',return_value=response) as model, \
+             patch.object(bridge,'_dispatch_direct_p4_move',side_effect=perform):
+            first=bridge.send_command('suba um pouco e vá para a esquerda')
+            second=bridge.send_command('suba um pouco e vá para a esquerda')
+        assert first['status']==second['status']=='EFFECT_VERIFIED'
+        assert state['cursor']==(140,100)
+        assert model.call_count==1
+        assert second['motor_source']=='VERIFIED_SESSION_CACHE'
+    finally:
+        for p in reversed(patches):p.stop()
+
+
+def test_semantic_question_does_not_execute():
+    from test_p44_direct_move import _bridge
+    bridge,kernel,patches = _bridge({})
+    response = SimpleNamespace(text='{"status":"none","steps":[]}',finish_reason='stop',output_tokens=12)
+    try:
+        with patch.dict('os.environ',{'BRAINNET_MOTOR_SEMANTIC':'1'}), \
+             patch('inference_backend.HTTPInferenceBackend.chat',return_value=response), \
+             patch.object(bridge,'_dispatch_direct_p4_move') as dispatch:
+            result=bridge.send_command('como mover o mouse?')
+        assert result['dispatched'] is False
+        dispatch.assert_not_called()
+    finally:
+        for p in reversed(patches):p.stop()
