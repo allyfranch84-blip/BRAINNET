@@ -83,3 +83,34 @@ def test_bad_observation_never_dispatches():
         assert result['status'] == 'ACTION_BLOCKED'
     finally:
         for item in reversed(patches): item.stop()
+
+
+def test_stop_during_observation_revokes_original_command():
+    obs = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(100,50),'monitor':'DISPLAY1','monitor_rect':(0,0,500,300)}
+    bridge, kernel, patches = _bridge(obs)
+    try:
+        def stop_before_dispatch():
+            assert bridge.stop_execution()['status'] == 'CANCEL_REQUESTED'
+            return {'interactive_desktop_verified':True}
+        with patch('capability_lab.observe_cursor_monitors', side_effect=stop_before_dispatch), \
+             patch('BRAINNET.asyncio.run_coroutine_threadsafe') as submit:
+            result = bridge.send_command('mova o mouse em qualquer direção')
+        assert result['code'] == 'COMMAND_REVOKED'
+        assert result['dispatched'] is False
+        submit.assert_not_called()
+    finally:
+        for item in reversed(patches): item.stop()
+
+
+def test_kernel_status_distinguishes_real_worker_readiness():
+    bridge, kernel, patches = _bridge({})
+    try:
+        assert bridge.send_command('/kernel status')['status'] == 'UNAVAILABLE'
+        kernel.is_running = True
+        kernel.bridge._running = True
+        kernel.bridge._workers = [Mock(done=Mock(return_value=False))]
+        result = bridge.send_command('/kernel status')
+        assert result['status'] == 'READY'
+        assert result['active_workers'] == 1 and result['direct_move_enabled'] is True
+    finally:
+        for item in reversed(patches): item.stop()
