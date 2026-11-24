@@ -1,7 +1,7 @@
 """Ordered execution of already validated semantic plans. No model or native IO."""
 from motor_intent import validate_plan
 
-SPECIAL=frozenset(('open_app','move_to','click_target','inspect_monitor'))
+SPECIAL=frozenset(('open_app','move_to','click_target','inspect_monitor','inspect_context'))
 
 
 def groups(steps):
@@ -50,7 +50,7 @@ def execute_sequence(plan,run,*,check_active):
             dispatched=True
         elif result.get('dispatched') is None and dispatched is False:
             dispatched=None
-        accepted=status in ('EFFECT_VERIFIED','INPUT_SENT') or (status=='OBSERVED' and group[0]['action']=='inspect_monitor')
+        accepted=status in ('EFFECT_VERIFIED','INPUT_SENT') or (status=='OBSERVED' and group[0]['action'] in ('inspect_monitor','inspect_context'))
         if not accepted:
             failure=result
             break
