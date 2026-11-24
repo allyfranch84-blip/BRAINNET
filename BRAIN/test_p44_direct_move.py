@@ -39,11 +39,11 @@ def test_exact_delegated_command_dispatches_one_bounded_physical_operation():
     obs = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(100,50),'monitor':'DISPLAY1','monitor_rect':(0,0,500,300)}
     bridge, kernel, patches = _bridge(obs)
     try:
-        with patch('BRAINNET.asyncio.run_coroutine_threadsafe', side_effect=_success_submit((100,50),(110,50))) as submit:
+        with patch('BRAINNET.asyncio.run_coroutine_threadsafe', side_effect=_success_submit((100,50),(250,50))) as submit:
             result = bridge.send_command('mova o mouse em qualquer direção')
         assert result['status'] == 'EFFECT_VERIFIED'
-        assert result['before'] == (100,50) and result['target'] == (110,50)
-        assert 'Movi o mouse 10 pixels para a direita.' == result['reply']
+        assert result['before'] == (100,50) and result['target'] == (250,50)
+        assert 'Movi o mouse 150 pixels para a direita.' == result['reply']
         assert submit.call_count == 1
     finally:
         for item in reversed(patches): item.stop()
@@ -65,9 +65,9 @@ def test_boundary_uses_left_direction_without_expanding_the_limit():
     obs = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(495,50),'monitor':'DISPLAY1','monitor_rect':(0,0,500,300)}
     bridge, kernel, patches = _bridge(obs)
     try:
-        with patch('BRAINNET.asyncio.run_coroutine_threadsafe', side_effect=_success_submit((495,50),(485,50))):
+        with patch('BRAINNET.asyncio.run_coroutine_threadsafe', side_effect=_success_submit((495,50),(345,50))):
             result = bridge.send_command('mova o mouse em qualquer direção')
-        assert result['target'] == (485,50)
+        assert result['target'] == (345,50)
         assert 'esquerda' in result['reply']
     finally:
         for item in reversed(patches): item.stop()
@@ -112,5 +112,20 @@ def test_kernel_status_distinguishes_real_worker_readiness():
         result = bridge.send_command('/kernel status')
         assert result['status'] == 'READY'
         assert result['active_workers'] == 1 and result['direct_move_enabled'] is True
+    finally:
+        for item in reversed(patches): item.stop()
+
+
+def test_direct_move_proposal_has_visible_distance_and_bound():
+    obs = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(100,50),'monitor':'DISPLAY1','monitor_rect':(0,0,500,300)}
+    bridge, kernel, patches = _bridge(obs)
+    try:
+        with patch.object(bridge, '_dispatch_direct_p4_move', return_value={'status':'SIMULATED','reply':'test'}) as dispatch:
+            bridge.send_command('mova o mouse em qualquer direção')
+        proposal, approval, budget = dispatch.call_args.args
+        assert proposal.start == (100,50)
+        assert proposal.target == (250,50)
+        assert proposal.max_distance == 150
+        assert approval.consume(proposal, obs)
     finally:
         for item in reversed(patches): item.stop()
