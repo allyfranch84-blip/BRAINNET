@@ -83,8 +83,24 @@ def ground_plan(text,plan,*,reference=None):
             if explicit:
                 step['app']=explicit
             target={'target':requested,'app':explicit or active}
-        elif action=='click' and not token_set & CLICK_CUES:
-            raise ValueError('CLICK_NOT_GROUNDED')
+        elif action=='click':
+            if not token_set & CLICK_CUES:
+                raise ValueError('CLICK_NOT_GROUNDED')
+            if has_reference(text):
+                previous=target or reference
+                if not previous:
+                    raise ValueError('REFERENCE_UNRESOLVED')
+                previous_app=canonical_app(previous.get('app',''))
+                if apps and previous_app and previous_app not in apps:
+                    raise ValueError('REFERENCE_APPLICATION_MISMATCH')
+                step.update(action='click_target',target=previous['target'])
+                if previous_app:
+                    step['app']=previous_app
+        elif action=='inspect_context':
+            # Disambiguate an explicitly named category only within a read-only
+            # query. This never turns words into an executable motor action.
+            if contains(tokens,words('inteligência artificial')) or contains(tokens,words('chat de ia')):
+                step['purpose']='ai_chat'
         elif action=='scroll' and not token_set & SCROLL_CUES:
             raise ValueError('SCROLL_NOT_GROUNDED')
         elif action=='move' and any(s['action']=='open_app' for s in bound['steps']) and not token_set & MOVE_CUES:
