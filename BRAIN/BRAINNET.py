@@ -825,16 +825,16 @@ class BrainnetBridge:
                 if not (left <= start[0] < right and top <= start[1] < bottom):
                     return {'status':'ACTION_BLOCKED','code':'CURSOR_OUTSIDE_MONITOR',
                             'reply':'Cursor fora dos limites físicos do monitor; nenhum movimento executado.','logs':[],'dispatched':False}
-                # Deterministic preference: right ten pixels, then left ten at
-                # the right edge.  No other direction or distance is inferred.
-                dx = 10 if start[0] + 10 < right else -10
+                # Visible direct diagnostic: right 150 pixels, or left at the edge.
+                distance = 150
+                dx = distance if start[0] + distance < right else -distance
                 target = (start[0] + dx, start[1])
                 if not (left <= target[0] < right and top <= target[1] < bottom):
                     return {'status':'ACTION_BLOCKED','code':'MONITOR_BOUNDARY',
-                            'reply':'Não há deslocamento horizontal de 10 pixels dentro do monitor atual.','logs':[],'dispatched':False}
+                            'reply':'Não há deslocamento horizontal de 150 pixels dentro do monitor atual.','logs':[],'dispatched':False}
                 operation_id = uuid.uuid4().hex
                 proposal = PhysicalMoveProposal(budget.task_id, operation_id, start, target,
-                                                observation['monitor'], rect, 0, budget.deadline_monotonic)
+                                                observation['monitor'], rect, 0, budget.deadline_monotonic, max_distance=distance)
                 approval = PhysicalMoveApproval(proposal)
                 # This approval derives only from this exact command received
                 # by the local MasterShell bridge, never from LLM output.
@@ -2065,7 +2065,7 @@ class BrainnetBridge:
             logger.info('[P44_MOVE] task_id=%s status=%s code=%s before=%s target=%s after=%s latency_ms=%s',
                         proposal.task_id, status, outcome.get('code'), before, target, after, outcome.get('latency_ms'))
             if status == 'EFFECT_VERIFIED':
-                reply = f'Movi o mouse 10 pixels para a {"direita" if target[0] > before[0] else "esquerda"}.'
+                reply = f'Movi o mouse {abs(target[0] - before[0])} pixels para a {"direita" if target[0] > before[0] else "esquerda"}.'
             else:
                 reply = f'Movimento não confirmado ({outcome.get("code", status)}); nenhum novo movimento será tentado.'
             return {'status':status, 'code':outcome.get('code', status), 'reply':reply, 'logs':[],
