@@ -52,3 +52,12 @@ def test_uia_evidence_is_not_current_after_switch():
     time[0]=10.1
     present.publish('spatial',{'foreground':0},10.,10.1)
     assert present.snapshot()['channels']['uia']['status']=='CONTEXT_CHANGED'
+
+
+def test_monitor_query_excludes_minimized_and_outside_windows():
+    from perceptual_present import describe_monitor
+    present,time,window=make()
+    present.publish('spatial',{'foreground':41,'cursor':{},'monitors':[{'device':'DISPLAY2','rect':(100,0,200,100)}]},9.95,10.)
+    present.publish('windows',{'windows':[dict(window,z_index=0),dict(window,hwnd=42,app='visible.exe',rect=(100,0,200,100),z_index=1),dict(window,hwnd=43,app='hidden.exe',rect=(100,0,200,100),minimized=True,z_index=2)]},9.9,10.)
+    reply=describe_monitor(present.snapshot(),2)['reply']
+    assert 'visible.exe' in reply and 'hidden.exe' not in reply and 'paint.exe' not in reply
