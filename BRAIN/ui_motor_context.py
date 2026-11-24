@@ -26,19 +26,20 @@ def find_window(query):
     def visit(hwnd, _):
         try:
             if not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
-                return
+                return True
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             if pid == os.getpid():
-                return
+                return True
             title = win32gui.GetWindowText(hwnd)
             process = psutil.Process(pid).name()
             if not title or not (key in normalize(title) or key in normalize(process)):
-                return
+                return True
             identity = inspect_window(hwnd)
             if identity and identity['pid'] == pid:
                 matches.append({**identity,'app':process})
         except Exception:
             pass
+        return True
     win32gui.EnumWindows(visit, None)
     if len(matches) != 1:
         return {'status':'TARGET_AMBIGUOUS' if matches else 'TARGET_NOT_FOUND','count':len(matches)}
@@ -211,8 +212,11 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
         approval=PhysicalMoveApproval(proposal)
         if not approval.approve_explicitly(proposal.proposal_id) or not approval.consume(proposal,current):
             return result('SEGMENT_REJECTED','PARTIAL' if evidence else 'ACTION_BLOCKED')
-        with approved_physical_move_scope(proposal):
-            ok=effector.mouse_move(*point,profile='physical_diagnostic',tolerance=0)
+        try:
+            with approved_physical_move_scope(proposal):
+                ok=effector.mouse_move(*point,profile='physical_diagnostic',tolerance=0)
+        except Exception:
+            return result('MOVE_INTERRUPTED','EFFECT_UNVERIFIED',dispatched=True)
         actual=observe_physical_monitor()
         if ok is not True or not unchanged(actual,{**before,'cursor':point}):
             return result('MOVE_NOT_CONFIRMED','EFFECT_UNVERIFIED',after=actual.get('cursor'),dispatched=True)
