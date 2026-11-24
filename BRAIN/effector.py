@@ -83,9 +83,33 @@ class Effector:
             # Do not turn an intentional move into an accidental drag.
             if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (1, 2, 4, 5, 6)):
                 raise PermissionError('MOUSE_BUTTON_HELD')
-            require_specific_physical_move(x, y)
-            if not user32.SetPhysicalCursorPos(x, y):
-                return False
+            proposal = _physical_move_scope.get()
+            if proposal.duration_ms:
+                # A straight physical trajectory; every sample remains within the
+                # approved segment and stops if the operator takes over.
+                frames = max(1, proposal.duration_ms // 20)
+                start = (before.x, before.y)
+                last = start
+                started = time.monotonic()
+                for index in range(1, frames + 1):
+                    remaining = started + index * proposal.duration_ms / (1000 * frames) - time.monotonic()
+                    if remaining > 0:
+                        time.sleep(remaining)
+                    require_specific_physical_move(x, y)
+                    current = POINT()
+                    if not user32.GetPhysicalCursorPos(ctypes.byref(current)) or (current.x, current.y) != last:
+                        return False
+                    if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (1, 2, 4, 5, 6)):
+                        raise PermissionError('MOUSE_BUTTON_HELD')
+                    point = (round(start[0] + (x - start[0]) * index / frames),
+                             round(start[1] + (y - start[1]) * index / frames))
+                    if not user32.SetPhysicalCursorPos(*point):
+                        return False
+                    last = point
+            else:
+                require_specific_physical_move(x, y)
+                if not user32.SetPhysicalCursorPos(x, y):
+                    return False
             require_specific_physical_move(x, y)
             after = POINT()
             if not user32.GetPhysicalCursorPos(ctypes.byref(after)):
