@@ -2335,9 +2335,11 @@ class BrainnetBridge:
                 outcome = {'status':'EFFECT_UNVERIFIED','code':'DISPATCH_UNCONFIRMED'}
             status, code = outcome.get('status'), outcome.get('code')
             if status=='EFFECT_VERIFIED':
-                reply = f"Cursor sobre {outcome['name']} ({outcome['control_type']}), posição {outcome['target']}; alvo UIA confirmado."
+                reply = f"Cursor sobre {outcome['name']} ({outcome['control_type']}), posição {outcome['target']}; localização confirmada por {outcome.get('source','UIA')}."
             elif status=='INPUT_SENT':
                 reply = f"Clique em {outcome['name']} ({outcome['control_type']}), posição {outcome['target']}; {outcome['sent_count']} clique(s) aceito(s). Efeito no aplicativo ainda não verificado."
+            elif code=='OCR_AFFORDANCE_UNVERIFIED':
+                reply = f"Texto {outcome['name']} localizado por OCR em {outcome['target']}, mas não há evidência suficiente de que seja um controle clicável. Nenhum clique enviado."
             else:
                 reply = f"Alvo {step['target']}: {code}. Nenhuma nova tentativa automática."
                 if code=='TARGET_OTHER_MONITOR':
@@ -2351,6 +2353,10 @@ class BrainnetBridge:
                         reply += ' Encontrados mas descartados: ' + '; '.join(f"{c['name']} ({c['reason']})" for c in outcome['rejected_matches'])
                     if outcome.get('similar_names'):
                         reply += ' Nomes semelhantes: ' + ', '.join(outcome['similar_names'])
+                    if outcome.get('ocr_status'):
+                        reply += f" OCR: {outcome['ocr_status']} ({outcome.get('ocr_error') or 'sem erro técnico'})."
+                    if outcome.get('ocr_similar'):
+                        reply += ' Textos semelhantes: ' + ', '.join(outcome['ocr_similar'])
                     reply += ' Consulte /ui controls.'
             logger.info('[UI_MOTOR] task_id=%s status=%s code=%s waypoints=%s',budget.task_id,status,code,outcome.get('waypoints'))
             return {'status':status,'code':code,'reply':reply + f' Origem: {source_label}.','logs':[],
