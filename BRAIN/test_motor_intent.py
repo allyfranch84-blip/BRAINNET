@@ -69,3 +69,41 @@ def test_semantic_question_does_not_execute():
         dispatch.assert_not_called()
     finally:
         for p in reversed(patches):p.stop()
+
+
+def test_backend_unavailable_preserves_delegated_move_without_model():
+    from test_p44_direct_move import _bridge
+    from inference_backend import BackendUnavailable
+    state = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(200,200),'monitor':'DISPLAY','monitor_rect':(0,0,800,800)}
+    bridge,kernel,patches = _bridge(state)
+    def perform(proposal, approval, budget):
+        assert approval.consume(proposal,state)
+        state['cursor'] = proposal.target
+        return {'status':'EFFECT_VERIFIED','after':proposal.target}
+    try:
+        with patch.dict('os.environ',{'BRAINNET_MOTOR_SEMANTIC':'1'}), \
+             patch('capability_lab.observe_physical_monitor',side_effect=lambda: dict(state)), \
+             patch('inference_backend.HTTPInferenceBackend.chat',side_effect=BackendUnavailable('offline')), \
+             patch.object(bridge,'_dispatch_direct_p4_move',side_effect=perform) as dispatch:
+            result=bridge.send_command('mova o mouse em qualquer direção')
+            assert result['status']=='EFFECT_VERIFIED'
+            assert result['motor_source']=='BUILTIN_VERIFIED_CAPABILITY'
+            assert state['cursor']!=(200,200)
+            assert bridge.send_command('como mover o mouse?')['dispatched'] is False
+            assert dispatch.call_count==1
+    finally:
+        for p in reversed(patches):p.stop()
+
+
+def test_copy_history_available_in_minimal_and_failure_not_reported_as_success():
+    from test_p44_direct_move import _bridge
+    bridge,kernel,patches = _bridge({})
+    bridge._chat_history=[{'role':'user','text':'teste'}, {'role':'ai','text':'resposta'}]
+    try:
+        with patch.object(bridge,'copy_text',return_value={'ok':True}) as copy:
+            assert bridge.send_command('/copy all')['status']=='COPIED'
+            assert 'teste' in copy.call_args.args[0]
+        with patch.object(bridge,'copy_text',return_value={'ok':False}):
+            assert bridge.send_command('/copy all')['status']=='ACTION_FAILED'
+    finally:
+        for p in reversed(patches):p.stop()
