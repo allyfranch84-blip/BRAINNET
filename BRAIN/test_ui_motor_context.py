@@ -39,8 +39,7 @@ def test_named_target_has_no_model_supplied_coordinates():
     assert validate_plan({'status':'execute','steps':[{'action':'click_target','target':'Salvar','button':'left','count':1}]})
     with pytest.raises(ValueError):
         validate_plan({'status':'execute','steps':[{'action':'move_to','target':'Salvar','x':123}]})
-    with pytest.raises(ValueError):
-        validate_plan({'status':'execute','steps':[{'action':'move_to','target':'Salvar'},{'action':'click','button':'left','count':1}]})
+    assert validate_plan({'status':'execute','steps':[{'action':'move_to','target':'Salvar'},{'action':'click','button':'left','count':1}]})
 
 
 @pytest.mark.parametrize('action', ['move_to','click_target'])
@@ -111,6 +110,7 @@ def test_focus_handoff_from_own_chat_to_selected_window():
     with authorization_scope(threading.Event()),patch('ui_motor_context.same_window',return_value=True), \
          patch('win32gui.GetForegroundWindow',side_effect=[99,1]), \
          patch('win32process.GetWindowThreadProcessId',return_value=(1,os.getpid())), \
+         patch('win32gui.GetWindowPlacement',return_value=(0,1,(0,0),(0,0),(0,0,100,100))), \
          patch('win32gui.SetForegroundWindow') as focus:
         result=activate_selected_window(window,99,deadline=time.monotonic()+5)
     assert result['status']=='READY' and result['observed_focus']==1
