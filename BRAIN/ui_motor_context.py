@@ -47,13 +47,13 @@ def find_window(query):
     return {'status':'BOUND','window':matches[0]}
 
 
-def same_window(window, *, foreground=False):
+def same_window(window, *, foreground=False, allow_minimized=False):
     import win32gui
     from uia_chat_readonly import inspect_window
     try:
         current = inspect_window(window['hwnd'])
         return bool(current and current['pid']==window['pid'] and current['started']==window['started']
-                    and not win32gui.IsIconic(window['hwnd'])
+                    and (allow_minimized or not win32gui.IsIconic(window['hwnd']))
                     and (not foreground or win32gui.GetForegroundWindow()==window['hwnd']))
     except Exception:
         return False
@@ -89,7 +89,7 @@ def stable_foreground(*, deadline):
     return int(hwnd or 0)
 
 
-def activate_selected_window(window, expected_foreground, *, deadline):
+def activate_selected_window(window, expected_foreground, *, deadline, previous_window=None):
     """Transfer focus only from our own chat to the explicitly selected window."""
     from execution_authority import require_action_allowed
     import win32gui, win32process
@@ -99,9 +99,9 @@ def activate_selected_window(window, expected_foreground, *, deadline):
                 'observed_focus':current,'target_hwnd':window['hwnd']}
     require_action_allowed('UI_TARGET')
     current=stable_foreground(deadline=deadline)
-    if not same_window(window):
+    if not same_window(window,allow_minimized=True):
         return result('CONTEXT_UNAVAILABLE',current)
-    if current==window['hwnd']:
+    if current==window['hwnd'] and same_window(window,foreground=True):
         return result('FOCUS_READY',current)
     if not current:
         return result('FOCUS_TRANSITION_TIMEOUT',0)
@@ -109,12 +109,16 @@ def activate_selected_window(window, expected_foreground, *, deadline):
         return result('FOCUS_CHANGED',current)
     try:
         _,pid=win32process.GetWindowThreadProcessId(current)
-        if pid!=os.getpid():
+        previous_verified=(previous_window is not None and current==previous_window['hwnd'] and same_window(previous_window,foreground=True))
+        if pid!=os.getpid() and not previous_verified and current!=window['hwnd']:
             return result('FOCUS_NOT_OWNED',current)
         require_action_allowed('UI_TARGET')
         if time.monotonic()>=deadline:
             return result('FOCUS_EXPIRED',current)
         try:
+            if win32gui.GetWindowPlacement(window['hwnd'])[1] in (2,6,7):
+                win32gui.ShowWindow(window['hwnd'],9)
+            require_action_allowed('UI_TARGET')
             win32gui.SetForegroundWindow(window['hwnd'])
         except Exception:
             # The API can report failure even while the activation is in flight.
