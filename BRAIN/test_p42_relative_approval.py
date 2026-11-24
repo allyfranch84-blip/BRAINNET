@@ -6,6 +6,7 @@ import effector
 
 class Fake:
  def __init__(self,pos):self.pos=pos;self.sets=0
+ def GetAsyncKeyState(self,vk):return 0
  def GetPhysicalCursorPos(self,p):p._obj.x,p._obj.y=self.pos;return 1
  def SetPhysicalCursorPos(self,x,y):self.sets+=1;self.pos=(x,y);return 1
 
