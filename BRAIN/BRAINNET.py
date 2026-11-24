@@ -185,6 +185,7 @@ class BrainnetKernel:
                     'execution_authorized': False}
 
     def __init__(self) -> None:
+        self.perceptual_present = None
         self.minimal_mode = os.getenv('BRAINNET_MINIMAL') == '1'
         self.rem_maintenance_enabled = False  # Requires separate review and authorization.
         if self.minimal_mode:
@@ -398,6 +399,10 @@ class BrainnetKernel:
         watchdog = None
         try:
             await self.bridge.start()
+            if os.getenv('BRAINNET_PERCEPTUAL_PRESENT')=='1':
+                from perceptual_present import PerceptualPresent
+                self.perceptual_present=PerceptualPresent(self.eye)
+                self.perceptual_present.start()
             if not getattr(self, 'minimal_mode', False):
                 self._runtime_telemetry.start()
                 watchdog = asyncio.create_task(self._circadian_rem_watchdog())
@@ -416,6 +421,10 @@ class BrainnetKernel:
                 await asyncio.sleep(1.0)
         finally:
             self.is_running = False
+            if self.perceptual_present is not None:
+                stopped=await asyncio.to_thread(self.perceptual_present.stop)
+                if not stopped:
+                    logger.warning('[PRESENT] Sensor encerramento pendente; nao confirmado.')
             if getattr(self, 'minimal_mode', False):
                 await self.bridge.stop()
             if self._runtime_telemetry is not None and not await asyncio.to_thread(self._runtime_telemetry.stop):
@@ -817,6 +826,23 @@ class BrainnetBridge:
                 self._ui_motor_window = found['window']
             window = found['window']
             return {'status':'BOUND','reply':f"Contexto: {window['app']}, HWND {window['hwnd']}, PID {window['pid']}. Use /ui controls para observar os controles.",'logs':[]}
+        if p_norm in ('/context','/ui world'):
+            present=getattr(self._kernel,'perceptual_present',None)
+            if present is None:
+                return {'status':'UNAVAILABLE','reply':'Percepção contínua não inicializada.','logs':[]}
+            snapshot=present.snapshot()
+            windows=snapshot['windows']
+            lines=[f"Presente v{snapshot['version']}: foco {snapshot['foreground']} ({snapshot['focus_state']}); {len(windows)} janelas observadas."]
+            for name,sample in snapshot['channels'].items():
+                value=sample.get('value') or {}
+                lines.append(f"{name}: {sample['status']}/{value.get('status','')} — idade {sample.get('age_ms')} ms")
+            for w in windows[:40]:
+                state='minimizada' if w['minimized'] else 'aberta'
+                lines.append(f"{w['app']} | HWND {w['hwnd']} | {state} | {w['rect']}" + (' | foco' if w['hwnd']==snapshot['foreground'] else ''))
+            if len(windows)>40:
+                lines.append('Lista limitada a 40 janelas.')
+            return {'status':'OBSERVED' if snapshot['channels']['windows']['status']=='OBSERVED' else 'UNAVAILABLE',
+                    'reply':'\n'.join(lines),'logs':[]}
         if p_norm == '/ui controls':
             from adaptive_resource_controller import current_task_budget
             from execution_authority import authorization_scope
@@ -824,11 +850,16 @@ class BrainnetBridge:
             with self._p4_lock:
                 window = self._ui_motor_window
             if window is None:
-                return {'status':'TARGET_REQUIRED','reply':'Selecione a janela com /ui context <aplicativo>.','logs':[]}
+                present=getattr(self._kernel,'perceptual_present',None)
+                if present is not None:
+                    window=present.snapshot().get('last_external')
+            if window is None:
+                return {'status':'TARGET_REQUIRED','reply':'Nenhuma janela externa recente identificada. Use /ui context <aplicativo>.','logs':[]}
             budget=current_task_budget.get()
             if budget is None or not self._kernel.loop or not self._kernel.loop.is_running():
                 return {'status':'UNAVAILABLE','reply':'Kernel indisponível para observação ativa.','logs':[]}
-            foreground=win32gui.GetForegroundWindow()
+            from ui_motor_context import stable_foreground
+            foreground=stable_foreground(deadline=budget.deadline_monotonic)
             token=budget.cancellation_event
             async def scan_active():
                 with authorization_scope(token):
@@ -851,7 +882,8 @@ class BrainnetBridge:
             names = [f"{c['name']} ({c['type'].removesuffix('Control')})" for c in scene['controls']]
             shown = names[:60]
             rejected = '; '.join(f"{k}: {v}" for k,v in scene.get('rejection_counts',{}).items())
-            return {'status':'OBSERVED','reply':f"{window['app']} em primeiro plano: {len(names)} controles elegíveis (de {scene.get('raw_count',0)} elementos UIA).\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else '') + f'\nDescartados: {rejected or "nenhum"}.','logs':[]}
+            focus_note='em primeiro plano' if scene.get('foreground_verified') else f"leitura sem foco confirmado ({scene.get('focus_code','UNKNOWN')})"
+            return {'status':'OBSERVED','reply':f"{window['app']} ({focus_note}): {len(names)} controles elegíveis (de {scene.get('raw_count',0)} elementos UIA).\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else '') + f'\nDescartados: {rejected or "nenhum"}.','logs':[]}
         if p_norm == '/motor status':
             from assistant_prompts import MODELO_PARSER
             from urllib.request import urlopen
@@ -2124,6 +2156,10 @@ class BrainnetBridge:
         initial = observe_physical_monitor()
         with self._p4_lock:
             ui_window = self._ui_motor_window
+        present=getattr(self._kernel,'perceptual_present',None)
+        snapshot=present.snapshot() if present is not None else {}
+        if ui_window is None:
+            ui_window=snapshot.get('last_external')
         ui_foreground = None
         if ui_window is not None:
             try:
@@ -2191,14 +2227,17 @@ class BrainnetBridge:
                 return {'status':'EFFECT_VERIFIED','reply':f"{window['app']} aberto e verificado; contexto definido automaticamente (HWND {window['hwnd']}, PID {window['pid']}). Use /ui controls.",'logs':[],'dispatched':outcome['dispatched']}
             return {'status':outcome['status'],'reply':f"Abertura de {app}: {outcome['code']}.",'logs':[],'dispatched':outcome['dispatched']}
         if plan['steps'][0]['action'] in ('move_to','click_target'):
-            if ui_window is None or not ui_foreground:
+            if ui_window is None:
                 return {'status':'TARGET_REQUIRED','reply':'Selecione uma janela aberta com /ui context <aplicativo> antes de interagir com um objeto.','logs':[],'dispatched':False}
             step = plan['steps'][0]
             # Object-relative intent does not depend on the pre-inference cursor.
             # Re-anchor once after planning, but never during native execution.
             import win32gui
-            foreground_now=win32gui.GetForegroundWindow()
-            if foreground_now not in (ui_foreground,ui_window['hwnd']):
+            from ui_motor_context import stable_foreground
+            foreground_now=stable_foreground(deadline=budget.deadline_monotonic)
+            if not foreground_now:
+                return {'status':'ACTION_BLOCKED','reply':'Transição de foco ainda não concluída. Nenhuma ação executada.','logs':[],'dispatched':False}
+            if ui_foreground and foreground_now not in (ui_foreground,ui_window['hwnd']):
                 return {'status':'ACTION_BLOCKED','reply':'Outra janela recebeu o foco durante a interpretação. Nenhuma ação executada.','logs':[],'dispatched':False}
             initial=observe_physical_monitor()
             time.sleep(.10)
@@ -2211,7 +2250,7 @@ class BrainnetBridge:
                     return await self._kernel.bridge.dispatch('ui_motor_target', {
                         'window':ui_window,'step':step,'task_id':budget.task_id,
                         'deadline':budget.deadline_monotonic,'expected_cursor':initial,
-                        'expected_foreground':ui_foreground}, timeout_sec=min(25,max(.01,budget.deadline_monotonic-time.monotonic())))
+                        'expected_foreground':foreground_now}, timeout_sec=min(25,max(.01,budget.deadline_monotonic-time.monotonic())))
             future = None
             try:
                 budget.check_active()
