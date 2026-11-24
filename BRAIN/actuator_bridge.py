@@ -315,9 +315,10 @@ class ActuatorBridge:
                                     'error_type': type(exc).__name__, 'approval_consumed': True}
                         after = observe_physical_monitor()
                         point = after.get('cursor')
-                        confirmed = (ok is True and after.get('status') == 'OBSERVED' and after.get('monitor') == proposal.monitor
+                        confirmed = (ok is True and after.get('status') == 'OBSERVED' and after.get('coordinate_space') == 'PHYSICAL'
+                                     and after.get('monitor') == proposal.monitor
                                      and tuple(after.get('monitor_rect', ())) == proposal.monitor_rect and isinstance(point, (tuple,list))
-                                     and len(point) == 2 and abs(point[0]-proposal.target[0]) <= proposal.tolerance
+                                     and len(point) == 2 and all(type(v) is int for v in point) and abs(point[0]-proposal.target[0]) <= proposal.tolerance
                                      and abs(point[1]-proposal.target[1]) <= proposal.tolerance)
                         require_action_allowed(action)
                         return {'status': 'EFFECT_VERIFIED' if confirmed else 'EFFECT_UNVERIFIED',
