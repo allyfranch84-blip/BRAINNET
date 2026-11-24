@@ -183,6 +183,7 @@ class PhysicalMoveProposal:
     monitor_rect: tuple
     tolerance: int
     deadline_monotonic: float
+    max_distance: int = 10
 
 @dataclass(frozen=True, slots=True)
 class RelativePhysicalMoveProposal:
@@ -290,7 +291,7 @@ class PhysicalMoveApproval:
                 or len(p.start)!=2 or len(p.target)!=2 or len(p.monitor_rect)!=4
                 or not all(type(v) is int for v in (*p.start, *p.target, *p.monitor_rect))):
                 return blocked('PROPOSAL_MISMATCH', 'approval')
-            if not 0 < math.dist(p.start,p.target) <= 10:
+            if type(p.max_distance) is not int or p.max_distance not in (10, 150) or not 0 < math.dist(p.start,p.target) <= p.max_distance:
                 return blocked('PROPOSAL_MISMATCH', 'approval')
             l,t,r,b=p.monitor_rect
             if not all(l <= point[0] < r and t <= point[1] < b for point in (p.start,p.target)):
