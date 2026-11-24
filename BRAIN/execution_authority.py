@@ -185,6 +185,7 @@ class PhysicalMoveProposal:
     deadline_monotonic: float
     max_distance: int = 10
     duration_ms: int = 0
+    display_topology: tuple = ()
 
 @dataclass(frozen=True, slots=True)
 class RelativePhysicalMoveProposal:
@@ -297,7 +298,13 @@ class PhysicalMoveApproval:
             if type(p.max_distance) is not int or p.max_distance not in (10, 150) or not 0 < math.dist(p.start,p.target) <= p.max_distance:
                 return blocked('PROPOSAL_MISMATCH', 'approval')
             l,t,r,b=p.monitor_rect
-            if not all(l <= point[0] < r and t <= point[1] < b for point in (p.start,p.target)):
+            if p.display_topology:
+                from display_motor_geometry import segment_covered, monitor_at, valid_topology
+                if (not valid_topology(p.display_topology) or p.duration_ms!=300
+                        or monitor_at(p.start,p.display_topology)!=(p.monitor,p.monitor_rect)
+                        or not segment_covered(p.start,p.target,p.display_topology)):
+                    return blocked('DISPLAY_PATH_INVALID','geometry')
+            elif not all(l <= point[0] < r and t <= point[1] < b for point in (p.start,p.target)):
                 return blocked('PROPOSAL_MISMATCH', 'geometry')
             if not isinstance(observation, dict) or observation.get('status') != 'OBSERVED':
                 return blocked('OBSERVATION_UNAVAILABLE', 'observation')
@@ -309,6 +316,8 @@ class PhysicalMoveApproval:
                 return blocked('MONITOR_CHANGED', 'observation')
             if tuple(observation.get('monitor_rect', ())) != p.monitor_rect:
                 return blocked('MONITOR_GEOMETRY_CHANGED', 'geometry')
+            if p.display_topology and observation.get('display_topology')!=p.display_topology:
+                return blocked('DISPLAY_TOPOLOGY_CHANGED','geometry')
             return {'ok': True, 'code': 'APPROVAL_CONSUMED', 'category': 'approval'}
 
 _physical_move_scope = ContextVar('brainnet_physical_move_scope', default=None)
