@@ -7,42 +7,77 @@ import time
 
 
 def read_spatial():
-    import win32gui
-    from capability_lab import observe_physical_monitor
+    import win32gui, win32api
+    from capability_lab import observe_physical_cursor
+    cursor=observe_physical_cursor()
+    monitors=[]
+    errors=[]
+    for handle,_,_ in win32api.EnumDisplayMonitors():
+        try:
+            info=win32api.GetMonitorInfo(handle)
+            mode=win32api.EnumDisplaySettingsEx(info['Device'],-1,0)
+            x,y=int(mode.Position_x),int(mode.Position_y)
+            w,h=int(mode.PelsWidth),int(mode.PelsHeight)
+            if w<=0 or h<=0:
+                raise ValueError('invalid display mode')
+            monitors.append({'device':info['Device'],'rect':(x,y,x+w,y+h),
+                             'primary':bool(info.get('Flags',0)&1),'dpi':'UNKNOWN'})
+        except Exception as exc:
+            errors.append(type(exc).__name__)
+    p=cursor.get('cursor')
+    matches=[m['device'] for m in monitors if p and m['rect'][0]<=p[0]<m['rect'][2] and m['rect'][1]<=p[1]<m['rect'][3]]
     return {'foreground':int(win32gui.GetForegroundWindow() or 0),
-            'cursor':observe_physical_monitor()}
+            'cursor':cursor,'monitors':monitors,'cursor_monitor':matches[0] if len(matches)==1 else None,
+            'monitor_errors':errors,'monitor_status':'OBSERVED' if monitors and not errors else 'PARTIAL' if monitors else 'UNAVAILABLE'}
 
 
 def read_windows():
-    import win32gui, win32process, psutil
+    import win32gui, psutil
+    from collections import Counter
     from uia_chat_readonly import inspect_window
     windows=[]
-    errors=0
+    errors=Counter()
+    visible=0
+    rejected=0
     truncated=False
     def visit(hwnd,_):
-        nonlocal errors,truncated
+        nonlocal visible,rejected,truncated
         try:
             if not win32gui.IsWindowVisible(hwnd):
                 return True
+            visible+=1
             if len(windows)>=256:
                 truncated=True
                 return True
             identity=inspect_window(hwnd)
             if identity is None:
+                rejected+=1
                 return True
             proc=psutil.Process(identity['pid'])
             if proc.create_time()!=identity['started']:
+                rejected+=1
                 return True
+            # A missing placement property must not discard an otherwise valid window.
+            try:
+                placement=win32gui.GetWindowPlacement(hwnd)
+                show=placement[1]
+                minimized=show in (2,6,7)
+                maximized=show==3
+            except Exception as exc:
+                errors['placement:'+type(exc).__name__]+=1
+                minimized=None
+                maximized=None
             windows.append({**identity,'app':proc.name(),
-                'minimized':bool(win32gui.IsIconic(hwnd)),
-                'maximized':bool(win32gui.IsZoomed(hwnd)),
+                'minimized':minimized,'maximized':maximized,
                 'owned':identity['pid']==os.getpid(),
                 'z_index':len(windows)})
-        except Exception:
-            errors+=1
+        except Exception as exc:
+            errors['window:'+type(exc).__name__]+=1
         return True
     win32gui.EnumWindows(visit,None)
-    return {'windows':windows,'errors':errors,'truncated':truncated}
+    return {'windows':windows,'errors':dict(errors),'visible_candidates':visible,
+            'rejected':rejected,'truncated':truncated,
+            'status':'PARTIAL' if windows and (errors or truncated) else 'OBSERVED' if windows else 'UNAVAILABLE'}
 
 
 class PerceptualPresent:
@@ -91,7 +126,7 @@ class PerceptualPresent:
                                   'version':self._version,'value':deepcopy(value)}
             spatial=self._channels.get('spatial',{})
             windows=self._channels.get('windows',{})
-            if (spatial.get('status')=='OBSERVED' and windows.get('status')=='OBSERVED'
+            if (spatial.get('status')=='OBSERVED' and windows.get('status') in ('OBSERVED','PARTIAL')
                     and 0<=self.clock()-spatial.get('ended',0)<=self.max_age['spatial']
                     and 0<=self.clock()-windows.get('ended',0)<=self.max_age['windows']):
                 focus=spatial['value'].get('foreground')
@@ -105,7 +140,7 @@ class PerceptualPresent:
             started=self.clock()
             try:
                 value=self.readers[name]()
-                self.publish(name,value,started,self.clock())
+                self.publish(name,value,started,self.clock(),status=value.get('status','OBSERVED') if name=='windows' else 'OBSERVED')
             except Exception as exc:
                 self.publish(name,{'error':type(exc).__name__},started,self.clock(),status='UNAVAILABLE')
             self._stop.wait(self.intervals[name])
@@ -144,7 +179,7 @@ class PerceptualPresent:
         spatial=channels['spatial']
         window_sample=channels['windows']
         foreground=spatial['value'].get('foreground') if spatial['status']=='OBSERVED' else None
-        windows=window_sample['value'].get('windows',[]) if window_sample['status']=='OBSERVED' else []
+        windows=window_sample['value'].get('windows',[]) if window_sample['status'] in ('OBSERVED','PARTIAL') else []
         live_external=next((w for w in windows if w['hwnd']==foreground and not w['owned']),None)
         # Last external is context only and must still be in the live inventory.
         if last is not None:
