@@ -107,3 +107,17 @@ def test_copy_history_available_in_minimal_and_failure_not_reported_as_success()
             assert bridge.send_command('/copy all')['status']=='ACTION_FAILED'
     finally:
         for p in reversed(patches):p.stop()
+
+
+def test_long_relative_move_is_split_at_executor_boundary():
+    plan=parse_response('{"status":"execute","steps":[{"action":"move","direction":"up","distance":300}]}')
+    assert [s['distance'] for s in plan['steps']]==[150,150]
+    assert all(s['direction']=='up' for s in plan['steps'])
+    with pytest.raises(ValueError):
+        parse_response('{"status":"execute","steps":[{"action":"move","direction":"up","distance":1201}]}')
+
+
+def test_monitor_query_cannot_be_combined_with_motor_input():
+    assert parse_response('{"status":"execute","steps":[{"action":"inspect_monitor","monitor":2}]}')
+    with pytest.raises(ValueError):
+        validate_plan({'status':'execute','steps':[{'action':'inspect_monitor','monitor':2},{'action':'click','button':'left','count':1}]})
