@@ -247,6 +247,12 @@ class ActuatorBridge:
     async def _route_execution(self, action: str, payload: dict[str, Any]) -> Any:
         require_action_allowed(action)
         match action:
+            case "ui_observe_active":
+                async with self._input_lock:
+                    require_action_allowed(action)
+                    from ui_motor_context import observe_active
+                    return await self._complete_physical(observe_active, payload['window'], self._perception,
+                        expected_foreground=payload['expected_foreground'], deadline=payload['deadline'])
             case "ui_motor_target":
                 async with self._input_lock:
                     require_action_allowed(action)
