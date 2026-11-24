@@ -119,6 +119,32 @@ class CognitiveContext:
         return {'recent_operations':recent,
                 'purpose_hypotheses':{app_name(w):list(APP_PRIORS[app_name(w)]) for w in windows if app_name(w) in APP_PRIORS}}
 
+    def planner_context(self,snapshot,text,selected=None):
+        """Provide facts and a single relevant noun, never historical executable steps."""
+        from intent_grounding import mentioned_apps, has_reference, canonical_app
+        windows=live_windows(snapshot)
+        live={identity(w):w for w in windows}
+        data={'purpose_hypotheses':{app_name(w):list(APP_PRIORS[app_name(w)]) for w in windows if app_name(w) in APP_PRIORS}}
+        reference=None
+        if has_reference(text):
+            apps=mentioned_apps(text)
+            eligible={k for k,w in live.items() if canonical_app(w.get('app')) in apps} if apps else {identity(selected)}
+            with self._lock:
+                latest={}
+                for record,_ in reversed(self._events):
+                    key=record['window']
+                    if key in live and key in eligible and key not in latest:
+                        latest[key]=record
+                if len(latest)==1:
+                    record=next(iter(latest.values()))
+                    steps=record['steps']
+                    if (record['effect_verified'] and len(steps)==1 and steps[0]['action']=='move_to'
+                            and 0<=time.monotonic()-record['at']<=300):
+                        reference={'app':record['app'],'target':steps[0]['target'],'source':'verified_cursor_location'}
+        if reference:
+            data['reference_candidate']=reference
+        return data,reference
+
     def resolve_purpose(self,snapshot,purpose):
         if purpose not in PURPOSES:
             raise ValueError('unknown purpose')
