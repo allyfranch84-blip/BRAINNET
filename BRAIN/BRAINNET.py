@@ -2103,6 +2103,9 @@ class BrainnetBridge:
                 budget.finish_inference(operation, reported_tokens=result.output_tokens)
                 budget.check_active()
                 budget.record_inference('ollama', model, 'INFERENCE_FINISHED')
+        source_label = {'SEMANTIC_MODEL':'modelo semântico', 'VERIFIED_SESSION_CACHE':'memória da sessão',
+                        'BUILTIN_VERIFIED_CAPABILITY':'capacidade básica local'}[source]
+        logger.info('[MOTOR_PLAN] task_id=%s source=%s steps=%s', budget.task_id, source, plan['steps'])
         if plan['status'] != 'execute':
             reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
                      else 'Não identifiquei uma ordem motora explícita.')
@@ -2163,9 +2166,13 @@ class BrainnetBridge:
             evidence.append({'action':step['action'], 'status':outcome.get('status'), 'before':start,
                              'target':target, 'after':outcome.get('after'), 'code':outcome.get('code')})
             if not accepted:
+                failure_code = outcome.get('code') or outcome.get('status') or 'UNKNOWN'
+                logger.warning('[MOTOR_FAILURE] task_id=%s source=%s step=%s code=%s start=%s target=%s after=%s',
+                               budget.task_id, source, len(evidence), failure_code, start, target, outcome.get('after'))
                 return {'status':'PARTIAL' if len(evidence)>1 else outcome.get('status','ACTION_FAILED'),
-                        'reply':'Uma ação não foi confirmada; sequência interrompida sem novas tentativas.',
-                        'logs':[], 'dispatched':True, 'motor_results':evidence}
+                        'reply':f'Ação {len(evidence)}/{len(prepared)} não confirmada ({failure_code}). Origem: {source_label}. Cursor inicial: {start}; alvo: {target}; observado: {outcome.get("after")}. Sequência interrompida.',
+                        'logs':[], 'dispatched':bool(len(evidence)>1 or outcome.get('dispatched', True)),
+                        'motor_results':evidence, 'motor_source':source}
         all_moves = all(step['action']=='move' for step in plan['steps'])
         if all_moves:
             with self._p4_lock:
@@ -2177,7 +2184,7 @@ class BrainnetBridge:
         logger.info('[MOTOR] task_id=%s source=%s steps=%s all_moves_verified=%s', budget.task_id, source, len(evidence), all_moves)
         return {'status':'EFFECT_VERIFIED' if all_moves else 'INPUT_SENT',
                 'reply':(f'Executei e verifiquei {len(evidence)} movimento(s). Cursor: {initial["cursor"]} → {cursor}.'
-                         if all_moves else f'{len(evidence)} ação(ões) despachada(s); cliques/rolagem aceitos pelo sistema, efeito no aplicativo ainda não verificado.'),
+                         if all_moves else f'{len(evidence)} ação(ões) despachada(s); cliques/rolagem aceitos pelo sistema, efeito no aplicativo ainda não verificado.') + f' Origem: {source_label}.',
                 'logs':[], 'dispatched':True, 'motor_results':evidence, 'motor_source':source}
 
     def _dispatch_direct_p4_move(self, proposal, approval, budget):
