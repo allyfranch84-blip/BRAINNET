@@ -68,7 +68,7 @@ class PerceptionEye:
         return (0, 0, 1920, 1080)
 
     def scan_uia_properties(self, hwnd: int, *, max_controls: int = 1000,
-                            include_sensitive: bool = True) -> List[Dict[str, Any]]:
+                            include_sensitive: bool = True, max_depth: int = 6) -> List[Dict[str, Any]]:
         """Read current UIA properties in this thread; never return COM objects.
 
         Unknown/unavailable properties remain None. When include_sensitive is
@@ -80,6 +80,8 @@ class PerceptionEye:
             return []
         if isinstance(max_controls, bool) or not isinstance(max_controls, int) or not 1 <= max_controls <= 5000:
             raise ValueError('invalid max_controls')
+        if type(max_depth) is not int or not 1 <= max_depth <= 32:
+            raise ValueError('invalid max_depth')
         if type(include_sensitive) is not bool:
             raise ValueError('invalid include_sensitive')
 
@@ -94,7 +96,7 @@ class PerceptionEye:
                 return []
             for entry in auto.WalkTree(root, getChildren=lambda c: c.GetChildren()):
                 control, depth = entry[:2]
-                if depth > 6:
+                if depth > max_depth:
                     continue
                 if len(out) >= max_controls:
                     break
