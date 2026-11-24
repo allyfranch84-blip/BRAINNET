@@ -2101,7 +2101,7 @@ class BrainnetBridge:
         if budget.cancellation_event.is_set() or not approval.approve_explicitly(operation_id):
             return {'status':'ACTION_BLOCKED','reply':'Aprovação cancelada ou reutilizada.','logs':[]}
         from execution_authority import authorization_scope
-        token = threading.Event()
+        token = budget.cancellation_event
         async def dispatch():
             from execution_authority import RelativePhysicalMoveProposal
             with authorization_scope(token):
@@ -2232,6 +2232,25 @@ class BrainnetBridge:
             self._kernel.voice.parar()
         return {"ok": True, "active": enabled}
 
+    def stop_execution(self) -> Dict[str, Any]:
+        """Revoke active command authority; do not claim native work has ended."""
+        from execution_authority import revoke_all_commands
+        tokens = revoke_all_commands()
+        with self._kernel._runtime_task_lock:
+            for budget in self._kernel._runtime_tasks.values():
+                budget.cancellation_event.set()
+        with self._p4_lock:
+            for _, approval, budget in self._p4_pending.values():
+                approval.cancel()
+                budget.cancellation_event.set()
+            self._p4_pending.clear()
+        self._skill_abort.set()
+        self._voice_active = False
+        self._ear.stop_listening()
+        logger.info('[STOP] cancellation requested; revoked_commands=%s', len(tokens))
+        return {'ok': True, 'status': 'CANCEL_REQUESTED',
+                'reply': 'Cancelamento solicitado; encerramento das operações em andamento ainda não confirmado.'}
+
     def stop_skill(self, skill_id: str = "") -> Dict[str, Any]:
         self._skill_abort.set()
         return {"ok": True, "aborted": True, "log": "Interrompido."}
@@ -2328,6 +2347,8 @@ if __name__ == "__main__":
                 return
             shutdown_started.set()
             logger.info('[P4_SHUTDOWN] started pid=%s', os.getpid())
+            from execution_authority import revoke_all_commands
+            revoke_all_commands()
             with bridge._p4_lock:
                 for _, approval, budget in bridge._p4_pending.values():
                     approval.cancel()
