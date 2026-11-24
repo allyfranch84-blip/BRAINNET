@@ -457,6 +457,8 @@ class BrainnetBridge:
         self._chat_history: List[Dict[str, str]] = []
         self._p4_lock = threading.Lock()
         self._p4_pending = {}
+        self._motor_plan_cache = {}
+        self._last_motor_direction = None
         from contextual_grounder import ContextualGrounder
         import psutil
         self._contextual_grounder = ContextualGrounder(
@@ -634,7 +636,8 @@ class BrainnetBridge:
         limits = _EFFORT_LIMITS[effective]
         command_started = time.perf_counter()
         p4_requested = getattr(getattr(self, '_kernel', None), 'minimal_mode', False) and os.getenv('BRAINNET_P4_PHYSICAL_PROPOSALS') == '1' and text.strip().casefold() == 'mova o mouse em qualquer direção'
-        task_deadline = 180 if p4_requested else limits['timeout']
+        semantic_motor = getattr(self._kernel, 'minimal_mode', False) and os.getenv('BRAINNET_MOTOR_SEMANTIC') == '1' and not text.strip().startswith('/')
+        task_deadline = 60 if semantic_motor else (180 if p4_requested else limits['timeout'])
         task_budget = SharedTaskBudget(uuid.uuid4().hex, effective, time.monotonic() + task_deadline,
                                        current_authorization(), ExecutionLimits(8, 8, limits['visual_steps'], limits['num_predict'] * 8))
         kernel = getattr(self, '_kernel', None)
@@ -791,6 +794,9 @@ class BrainnetBridge:
                     'reply': f"Kernel real: {'pronto' if ready else 'indisponível'}; PID {os.getpid()}; perfil {'mínimo' if minimal else 'completo'}; workers ativos: {active_workers}; movimento direto configurado: {'sim' if direct else 'não'}.",
                     'logs': [], 'pid': os.getpid(), 'minimal': minimal,
                     'active_workers': active_workers, 'direct_move_enabled': direct}
+        if (getattr(self._kernel, 'minimal_mode', False)
+                and os.getenv('BRAINNET_MOTOR_SEMANTIC') == '1' and not prompt_raw.startswith('/')):
+            return self._execute_semantic_motor(prompt_raw)
         if getattr(self._kernel, 'minimal_mode', False) and not (p_norm.startswith('/uia scan') or parse_supervised_mouse_move(prompt_raw)):
             return {'reply': 'Capacidade indisponível no perfil mínimo experimental.', 'logs': [], 'status': 'UNAVAILABLE'}
         manual = self._manual_capability_command(prompt_raw, p_norm)
@@ -2039,6 +2045,124 @@ class BrainnetBridge:
         logger.info('[P3_GUI] pid=%s task_id=%s status=%s roundtrip_ms=%.3f', os.getpid(), task_id, status, duration_ms)
         return {'ok': True}
 
+    def _execute_semantic_motor(self, text):
+        """Interpret language once, then execute only validated native motor primitives."""
+        from adaptive_resource_controller import current_task_budget, BudgetExhausted
+        from assistant_prompts import MODELO_PARSER
+        from inference_backend import HTTPInferenceBackend, InferenceRequest
+        from motor_intent import SYSTEM_PROMPT, parse_response, resolve_move, MAX_DISTANCE
+        from capability_lab import observe_physical_monitor, observe_cursor_monitors
+        from execution_authority import PhysicalMoveProposal, PhysicalMoveApproval, authorization_scope
+
+        budget = current_task_budget.get()
+        if budget is None or budget.cancellation_event is not current_authorization():
+            return {'status':'ACTION_BLOCKED','reply':'Comando sem contexto ativo.','logs':[], 'dispatched':False}
+        key = ' '.join(text.casefold().split())
+        initial = observe_physical_monitor()
+        def observed(value):
+            return value.get('status') == 'OBSERVED' and value.get('coordinate_space') == 'PHYSICAL'
+        def same_context(a, b):
+            return observed(a) and observed(b) and all(a.get(k) == b.get(k) for k in ('cursor','monitor','monitor_rect'))
+
+        with self._p4_lock:
+            plan = self._motor_plan_cache.get(key)
+        source = 'VERIFIED_SESSION_CACHE' if plan else 'SEMANTIC_MODEL'
+        if plan is None:
+            model = os.getenv('BRAINNET_MOTOR_MODEL', MODELO_PARSER)
+            operation = budget.begin_inference(estimated_tokens=512)
+            try:
+                budget.record_inference('ollama', model, 'INFERENCE_RUNNING')
+                backend = HTTPInferenceBackend(OLLAMA_GENERATE_URL.removesuffix('/api/generate'), model, 'ollama')
+                request = InferenceRequest(model=model, messages=[{'role':'system','content':SYSTEM_PROMPT},
+                    {'role':'user','content':text}], request_id=budget.task_id, timeout=min(30, budget.deadline_monotonic-time.monotonic()),
+                    max_tokens=512, context_tokens=2048, json_output=True)
+                result = backend.chat(request)
+                if result.finish_reason in ('length','max_tokens'):
+                    raise ValueError('truncated motor plan')
+                plan = parse_response(result.text)
+            except Exception as exc:
+                budget.finish_inference(operation, confirmed=False)
+                return {'status':'UNAVAILABLE','reply':f'Interpretação motora indisponível ({type(exc).__name__}); nenhuma ação executada.',
+                        'logs':[], 'dispatched':False}
+            budget.finish_inference(operation, reported_tokens=result.output_tokens)
+            budget.check_active()
+            budget.record_inference('ollama', model, 'INFERENCE_FINISHED')
+        if plan['status'] != 'execute':
+            reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
+                     else 'Não identifiquei uma ordem motora explícita.')
+            return {'status':'UNAVAILABLE','reply':reply,'logs':[], 'dispatched':False}
+        if not same_context(initial, observe_physical_monitor()) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
+            return {'status':'ACTION_BLOCKED','reply':'Cursor ou desktop mudou durante a interpretação. Nenhuma ação executada.',
+                    'logs':[], 'dispatched':False}
+
+        # Preflight the complete geometry before sending the first operation.
+        cursor = tuple(initial['cursor'])
+        rect = tuple(initial['monitor_rect'])
+        previous = self._last_motor_direction
+        prepared = []
+        try:
+            for step in plan['steps']:
+                start = cursor
+                if step['action'] == 'move':
+                    cursor, previous = resolve_move(start, rect, step['direction'], step['distance'], previous=previous)
+                prepared.append((step, start, cursor))
+        except (ValueError, TypeError, KeyError):
+            return {'status':'ACTION_BLOCKED','reply':'O percurso solicitado sai do monitor ou tem geometria inválida. Nenhuma ação executada.',
+                    'logs':[], 'dispatched':False}
+        evidence = []
+        for step, start, target in prepared:
+            budget.check_active()
+            current = observe_physical_monitor()
+            expected = {**initial, 'cursor':start}
+            if not same_context(current, expected):
+                return {'status':'PARTIAL' if evidence else 'ACTION_BLOCKED','reply':'Cursor ou monitor mudou; sequência interrompida.',
+                        'logs':[], 'dispatched':bool(evidence), 'motor_results':evidence}
+            if step['action'] == 'move':
+                proposal = PhysicalMoveProposal(budget.task_id, uuid.uuid4().hex, start, target,
+                            initial['monitor'], rect, 0, budget.deadline_monotonic, max_distance=MAX_DISTANCE)
+                approval = PhysicalMoveApproval(proposal)
+                if not approval.approve_explicitly(proposal.proposal_id):
+                    return {'status':'PARTIAL' if evidence else 'ACTION_BLOCKED','reply':'Operação expirada; sequência interrompida.',
+                            'logs':[], 'dispatched':bool(evidence), 'motor_results':evidence}
+                outcome = self._dispatch_direct_p4_move(proposal, approval, budget)
+                accepted = outcome.get('status') == 'EFFECT_VERIFIED'
+            else:
+                token = budget.cancellation_event
+                async def send_input():
+                    with authorization_scope(token):
+                        return await self._kernel.bridge.dispatch('mouse_cursor_input', {'expected':expected,'step':step}, timeout_sec=5)
+                future = None
+                try:
+                    if not self._kernel.loop or not self._kernel.loop.is_running():
+                        raise RuntimeError('kernel offline')
+                    future = asyncio.run_coroutine_threadsafe(send_input(), self._kernel.loop)
+                    command = future.result(timeout=min(10, max(.01,budget.deadline_monotonic-time.monotonic())))
+                    outcome = command.result if command.status == 'completed' and isinstance(command.result,dict) else {'status':'EFFECT_UNVERIFIED'}
+                except Exception:
+                    token.set()
+                    if future is not None:
+                        future.cancel()
+                    outcome = {'status':'EFFECT_UNVERIFIED'}
+                accepted = outcome.get('status') == 'INPUT_SENT'
+            evidence.append({'action':step['action'], 'status':outcome.get('status'), 'before':start,
+                             'target':target, 'after':outcome.get('after'), 'code':outcome.get('code')})
+            if not accepted:
+                return {'status':'PARTIAL' if len(evidence)>1 else outcome.get('status','ACTION_FAILED'),
+                        'reply':'Uma ação não foi confirmada; sequência interrompida sem novas tentativas.',
+                        'logs':[], 'dispatched':True, 'motor_results':evidence}
+        all_moves = all(step['action']=='move' for step in plan['steps'])
+        if all_moves:
+            with self._p4_lock:
+                self._last_motor_direction = previous
+                if len(self._motor_plan_cache) >= 64:
+                    self._motor_plan_cache.pop(next(iter(self._motor_plan_cache)))
+                self._motor_plan_cache[key] = plan
+        logger.info('[MOTOR] task_id=%s source=%s steps=%s all_moves_verified=%s', budget.task_id, source, len(evidence), all_moves)
+        return {'status':'EFFECT_VERIFIED' if all_moves else 'INPUT_SENT',
+                'reply':(f'Executei e verifiquei {len(evidence)} movimento(s). Cursor: {initial["cursor"]} → {cursor}.'
+                         if all_moves else f'{len(evidence)} ação(ões) despachada(s); cliques/rolagem aceitos pelo sistema, efeito no aplicativo ainda não verificado.'),
+                'logs':[], 'dispatched':True, 'motor_results':evidence, 'motor_source':source}
+
     def _dispatch_direct_p4_move(self, proposal, approval, budget):
         """Dispatch the bounded P4.4 move through the existing physical path."""
         from execution_authority import authorization_scope
@@ -2065,7 +2189,11 @@ class BrainnetBridge:
             logger.info('[P44_MOVE] task_id=%s status=%s code=%s before=%s target=%s after=%s latency_ms=%s',
                         proposal.task_id, status, outcome.get('code'), before, target, after, outcome.get('latency_ms'))
             if status == 'EFFECT_VERIFIED':
-                reply = f'Movi o mouse {abs(target[0] - before[0])} pixels para a {"direita" if target[0] > before[0] else "esquerda"}.'
+                dx, dy = target[0]-before[0], target[1]-before[1]
+                if dy == 0:
+                    reply = f'Movi o mouse {abs(dx)} pixels para a {"direita" if dx > 0 else "esquerda"}.'
+                else:
+                    reply = f'Movimento verificado: {before} → {after} (dx={dx}, dy={dy}).'
             else:
                 reply = f'Movimento não confirmado ({outcome.get("code", status)}); nenhum novo movimento será tentado.'
             return {'status':status, 'code':outcome.get('code', status), 'reply':reply, 'logs':[],
