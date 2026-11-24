@@ -19,6 +19,7 @@ Vocabulário:
 {"action":"move","direction":"right|left|up|down|up_right|up_left|down_right|down_left|any","distance":150}
 {"action":"click","button":"left|right|middle","count":1}
 {"action":"scroll","direction":"up|down","count":1}
+{"action":"open_app","target":"paint|notepad|calculator"}
 {"action":"move_to","target":"nome do controle"}
 {"action":"click_target","target":"nome do controle","button":"left|right|middle","count":1}
 Movimentos usam pixels relativos (1 a 150 por passo); distância não especificada: 150.
@@ -28,7 +29,7 @@ Clique ou role na posição atual somente quando essa intenção for explícita;
 sem alvo pode usar o cursor atual se o pedido for claramente uma ordem de clique.
 Nunca transforme perguntas, exemplos, citações, negações, instruções para explicar,
 pedidos de implementação ou descrições de código em ações. Retorne none.
-Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada pelo usuário, nunca invente coordenadas. Nesta versão, um plano com alvo nomeado deve ter exatamente uma etapa; não misture outras ações. Abertura de aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
+Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada pelo usuário, nunca invente coordenadas. Nesta versão, um plano com alvo nomeado deve ter exatamente uma etapa; não misture outras ações. Para abrir Paint, Bloco de Notas ou Calculadora, use open_app com o identificador canônico paint, notepad ou calculator; apenas uma etapa. Outros aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
 Não invente passos, alvos ou cliques. Use no máximo 8 passos.
 Preserve quantidades de rolagem: cada vez, incremento ou notch pedido corresponde a uma unidade de count; o executor enviará eventos separados. Se uma quantidade não couber no limite, retorne unsupported, não a reduza.
 Exemplos:
@@ -38,6 +39,8 @@ Exemplos:
 "clique com o botão direito na posição atual" -> {"status":"execute","steps":[{"action":"click","button":"right","count":1}]}
 "role para baixo três vezes" -> {"status":"execute","steps":[{"action":"scroll","direction":"down","count":3}]}
 "role cinco incrementos para cima" -> {"status":"execute","steps":[{"action":"scroll","direction":"up","count":5}]}
+"abra o paint" -> {"status":"execute","steps":[{"action":"open_app","target":"paint"}]}
+"abra o bloco de notas" -> {"status":"execute","steps":[{"action":"open_app","target":"notepad"}]}
 "como mover o mouse?" -> {"status":"none","steps":[]}
 "mova o mouse até o botão salvar" -> {"status":"execute","steps":[{"action":"move_to","target":"Salvar"}]}
 "clique com o direito no botão Editar" -> {"status":"execute","steps":[{"action":"click_target","target":"Editar","button":"right","count":1}]}
@@ -66,6 +69,9 @@ def validate_plan(value):
                     or type(step['distance']) is not int
                     or not 1 <= step['distance'] <= MAX_DISTANCE):
                 raise ValueError('invalid relative movement')
+        elif action == 'open_app':
+            if len(steps)!=1 or set(step)!={'action','target'} or step['target'] not in ('paint','notepad','calculator'):
+                raise ValueError('invalid application target')
         elif action in ('move_to','click_target'):
             keys = {'action','target'} if action=='move_to' else {'action','target','button','count'}
             if (len(steps)!=1 or set(step)!=keys or not isinstance(step['target'],str)
