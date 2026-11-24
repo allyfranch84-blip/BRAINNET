@@ -838,12 +838,17 @@ class BrainnetBridge:
             from memory_recall import recall
             query=prompt_raw[len('/memory recall '):].strip()
             try:
-                outcome=recall(Path(__file__).resolve().parent,query)
+                outcome=recall(Path(__file__).resolve().parent,query,engine=self._kernel.vsa)
             except ValueError as exc:
                 return {'status':'ACTION_BLOCKED','reply':str(exc),'logs':[],'dispatched':False}
             lines=['Recuperação histórica somente leitura; sem autorização de execução.']
             for item in outcome['matches']:
-                lines.append(f"{item['table']} | {item['id']} | {item['label']} | correspondência lexical {item['lexical_score']:.2f}")
+                metric=(f"correspondência lexical {item['lexical_score']:.2f}" if item['match']=='LEXICAL' else
+                        f"candidato FHRR por semelhança textual {item['fhrr_similarity']:.3f}")
+                lines.append(f"{item['table']} | {item['id']} | {item['label']} | {metric}")
+            lines.append(f"Candidatos encontrados: {outcome['candidate_count']}; exibidos: {len(outcome['matches'])}.")
+            if outcome['approximate_truncated']:
+                lines.append('Busca aproximada limitada pelo prazo.')
             if not outcome['matches']:
                 lines.append('Nenhum registro correspondente encontrado nas fontes consultadas.')
             for entry in outcome['sources']:
