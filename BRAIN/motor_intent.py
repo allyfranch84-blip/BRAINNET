@@ -29,7 +29,7 @@ Clique ou role na posição atual somente quando essa intenção for explícita;
 sem alvo pode usar o cursor atual se o pedido for claramente uma ordem de clique.
 Nunca transforme perguntas, exemplos, citações, negações, instruções para explicar,
 pedidos de implementação ou descrições de código em ações. Retorne none. Exceção somente de leitura: perguntas sobre o que há em um monitor identificado usam inspect_monitor com número inteiro do DISPLAY, sem movimento ou clique.
-Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada ou o contexto externo recente, nunca invente coordenadas. Se a ordem nomear explicitamente um aplicativo, acrescente o campo opcional app ao passo move_to ou click_target, contendo apenas o nome desse aplicativo; nunca acrescente app por suposição. Nesta versão, um plano com alvo nomeado deve ter exatamente uma etapa; não misture outras ações. Para abrir Paint, Bloco de Notas ou Calculadora, use open_app com o identificador canônico paint, notepad ou calculator; apenas uma etapa. Outros aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
+Alvos nomeados de interface: use move_to para posicionar sem clicar, click_target para clicar. Informe somente o nome do controle, sem "botão", "menu" ou "ícone" se forem descritores genéricos. O executor usa a janela selecionada ou o contexto externo recente, nunca invente coordenadas. Se a ordem nomear explicitamente um aplicativo, acrescente o campo opcional app ao passo move_to ou click_target, contendo apenas o nome desse aplicativo; nunca acrescente app por suposição. Combine ações na ordem pedida, inclusive abrir aplicativo, localizar controles, clicar, mover e consultar monitores. open_app define o contexto das etapas seguintes. Para abrir Paint, Bloco de Notas ou Calculadora, use open_app com o identificador canônico paint, notepad ou calculator. Se qualquer etapa solicitada não for suportada, retorne unsupported para o plano inteiro. Outros aplicativos, coordenadas absolutas, arrasto, digitação e tarefas não suportadas: unsupported para o plano inteiro.
 Não invente passos, alvos ou cliques. Use no máximo 8 passos.
 Preserve quantidades de rolagem: cada vez, incremento ou notch pedido corresponde a uma unidade de count; o executor enviará eventos separados. Se uma quantidade não couber no limite, retorne unsupported, não a reduza.
 Exemplos:
@@ -41,6 +41,8 @@ Exemplos:
 "role cinco incrementos para cima" -> {"status":"execute","steps":[{"action":"scroll","direction":"up","count":5}]}
 "abra o paint" -> {"status":"execute","steps":[{"action":"open_app","target":"paint"}]}
 "abra o bloco de notas" -> {"status":"execute","steps":[{"action":"open_app","target":"notepad"}]}
+"abra o paint, mova até Ampliar e clique em Ampliar" -> {"status":"execute","steps":[{"action":"open_app","target":"paint"},{"action":"move_to","target":"Ampliar"},{"action":"click_target","target":"Ampliar","button":"left","count":1}]}
+"consulte o monitor 2 e depois abra o paint" -> {"status":"execute","steps":[{"action":"inspect_monitor","monitor":2},{"action":"open_app","target":"paint"}]}
 "o que está no monitor 2?" -> {"status":"execute","steps":[{"action":"inspect_monitor","monitor":2}]}
 "mova o mouse para cima 300 pixels" -> {"status":"execute","steps":[{"action":"move","direction":"up","distance":300}]}
 "desenhe um quadrado no paint" -> {"status":"unsupported","steps":[]}
@@ -73,10 +75,10 @@ def validate_plan(value):
                     or not 1 <= step['distance'] <= MAX_DISTANCE):
                 raise ValueError('invalid relative movement')
         elif action == 'inspect_monitor':
-            if len(steps)!=1 or set(step)!={'action','monitor'} or type(step['monitor']) is not int or not 1<=step['monitor']<=32:
+            if set(step)!={'action','monitor'} or type(step['monitor']) is not int or not 1<=step['monitor']<=32:
                 raise ValueError('invalid monitor observation')
         elif action == 'open_app':
-            if len(steps)!=1 or set(step)!={'action','target'} or step['target'] not in ('paint','notepad','calculator'):
+            if set(step)!={'action','target'} or step['target'] not in ('paint','notepad','calculator'):
                 raise ValueError('invalid application target')
         elif action in ('move_to','click_target'):
             keys = {'action','target'} if action=='move_to' else {'action','target','button','count'}
@@ -84,7 +86,7 @@ def validate_plan(value):
                 if not isinstance(step['app'],str) or not step['app'].strip() or len(step['app'])>120:
                     raise ValueError('invalid application qualifier')
                 keys.add('app')
-            if (len(steps)!=1 or set(step)!=keys or not isinstance(step['target'],str)
+            if (set(step)!=keys or not isinstance(step['target'],str)
                     or not step['target'].strip() or len(step['target'])>160):
                 raise ValueError('invalid named target')
             if action=='click_target' and (step['button'] not in ('left','right','middle')
