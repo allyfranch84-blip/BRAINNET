@@ -14,6 +14,7 @@ SOURCES=(
     ('hmem_memory.db','hmem_schemas','schema_id','concept_label','last_updated','sample_count'),
     ('core1_pdag.db','pdag_nodes','context_key','intent','last_active','consecutive_successes'),
     ('core1_pdag.db','pdag_syntactic_routes','context_key','intent','last_active',None),
+    ('core1_pdag.db','transitions','id',"app_name || ' | ' || COALESCE(intent,'')",'timestamp',None),
     ('long_context.db','long_context_state','doc_id','doc_id','updated_at','current_chunk'),
 )
 
@@ -27,7 +28,19 @@ def _open(path,deadline):
     conn.set_progress_handler(lambda:int(time.monotonic()>=deadline),1000)
     return conn
 
-def recall(directory,query,*,limit=12,seconds=3.0):
+def _grams(tokens):
+    return {word[i:i+3] for word in tokens for i in range(len(word)-2)}
+
+def _label_vector(engine,grams):
+    # A deliberately small associative lexical representation, not an embedding
+    # of meaning. No shared token cache or retained matrix is allocated.
+    import numpy as np
+    total=np.zeros(engine.dim,dtype=np.complex64)
+    for gram in sorted(grams):
+        total+=engine.generate_vector('recall:trigram:v1:'+gram)
+    return np.exp(1j*np.angle(total)).astype(np.complex64)
+
+def recall(directory,query,*,limit=12,seconds=3.0,engine=None):
     if not isinstance(query,str) or not query.strip() or len(query)>200 or type(limit) is not int or not 1<=limit<=30:
         raise ValueError('Consulta inválida')
     tokens=_words(query)
@@ -35,6 +48,10 @@ def recall(directory,query,*,limit=12,seconds=3.0):
         raise ValueError('Consulta sem termos')
     deadline=time.monotonic()+seconds
     results=[]; sources=[]
+    qgrams=_grams(tokens)
+    qvector=_label_vector(engine,qgrams) if engine is not None and qgrams else None
+    scores={}
+    approximate_truncated=False
     for name,table,key,label,stamp,count in SOURCES:
         path=Path(directory)/name
         if not path.is_file():
@@ -47,18 +64,51 @@ def recall(directory,query,*,limit=12,seconds=3.0):
             for ref,text,ts,n in rows:
                 candidate=_words(text or '')
                 overlap=len(tokens&candidate)
-                if not overlap:
-                    continue
                 score=overlap/len(tokens)
+                similarity=None
+                match='LEXICAL'
+                if not overlap:
+                    if qvector is None:
+                        continue
+                    grams=_grams(candidate)
+                    if not grams & qgrams:
+                        continue
+                    if time.monotonic()>=deadline:
+                        approximate_truncated=True
+                        continue
+                    cache_key=tuple(sorted(grams))
+                    if cache_key not in scores:
+                        import numpy as np
+                        vec=_label_vector(engine,grams)
+                        scores[cache_key]=float(np.real(np.vdot(qvector,vec))/engine.dim)
+                    similarity=scores[cache_key]
+                    if similarity<0.10:
+                        continue
+                    match='FHRR_LEXICAL_CANDIDATE'
                 results.append({'database':name,'table':table,'id':str(ref),'label':str(text),
-                                'timestamp':ts,'count':n,'lexical_score':score,
+                                'timestamp':ts,'count':n,'lexical_score':score,'fhrr_similarity':similarity,'match':match,
                                 'historical_verification':'UNKNOWN','execution_authorized':False})
             sources.append({'table':table,'status':'READ','scanned':len(rows),'possibly_truncated':len(rows)==5000})
         except (sqlite3.Error,OSError) as exc:
             sources.append({'table':table,'status':'UNAVAILABLE','error':type(exc).__name__})
-    results.sort(key=lambda r:(r['lexical_score'],r['timestamp'] or 0),reverse=True)
+    results.sort(key=lambda r:(r['lexical_score'],r['fhrr_similarity'] or 0,r['timestamp'] or 0),reverse=True)
+    # In hybrid mode, leave room for different concepts and sources rather
+    # than returning twelve identical process labels.
+    if engine is not None:
+        selected=[]; groups={}
+        for item in results:
+            group=(item['table'],tuple(sorted(_words(item['label']))))
+            if groups.get(group,0)>=3:
+                continue
+            groups[group]=groups.get(group,0)+1
+            selected.append(item)
+            if len(selected)>=limit:
+                break
+    else:
+        selected=results[:limit]
     return {'status':'OBSERVED' if any(s['status']=='READ' for s in sources) else 'UNAVAILABLE',
-            'matches':results[:limit],'sources':sources,'execution_authorized':False}
+            'matches':selected,'sources':sources,'candidate_count':len(results),
+            'approximate_truncated':approximate_truncated,'execution_authorized':False}
 
 def read_record(directory,table,record_id,*,seconds=2.0):
     """Read a single explicitly named record, with a bounded raw payload.
@@ -66,7 +116,7 @@ def read_record(directory,table,record_id,*,seconds=2.0):
     """
     payloads={'hmem_nodes':'payload_json','hmem_schemas':'payload_json',
               'pdag_nodes':'pipeline_spec','pdag_syntactic_routes':'pipeline_steps',
-              'long_context_state':'cumulative_summary'}
+              'long_context_state':'cumulative_summary','transitions':'steps_json'}
     source=next((s for s in SOURCES if s[1]==table),None)
     if source is None or not isinstance(record_id,str) or not record_id or len(record_id)>256:
         raise ValueError('Fonte ou ID inválido')
