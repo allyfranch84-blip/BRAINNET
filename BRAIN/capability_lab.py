@@ -339,7 +339,7 @@ def observe_physical_monitor(api=None, cursor_reader=None):
         if len(matches) != 1:
             return {'status':'OBSERVATION_UNAVAILABLE', 'reason':'Monitor físico não identificado unicamente'}
         name, rect = matches[0]
-        return {'status':'OBSERVED', 'cursor':point, 'monitor':name, 'monitor_rect':rect, 'coordinate_space':'PHYSICAL', 'source':'GetPhysicalCursorPos/EnumDisplaySettingsExW', 'timestamp':cursor['timestamp']}
+        return {'status':'OBSERVED', 'cursor':point, 'monitor':name, 'monitor_rect':rect, 'display_topology':tuple(sorted(displays)), 'coordinate_space':'PHYSICAL', 'source':'GetPhysicalCursorPos/EnumDisplaySettingsExW', 'timestamp':cursor['timestamp']}
     except Exception as exc:
         return {'status':'OBSERVATION_UNAVAILABLE', 'reason':'Geometria indisponível', 'error_type':type(exc).__name__}
 
