@@ -219,7 +219,9 @@ class BrainnetKernel:
         if not hab_dir.exists():
             hab_dir.mkdir(parents=True, exist_ok=True)
 
-        self.rem_engine = REMSleepEngine(db_path="core1_pdag.db", skills_dir=hab_dir, idle_threshold_sec=900.0)
+        self.rem_engine = REMSleepEngine(db_path="core1_pdag.db", skills_dir=hab_dir, idle_threshold_sec=900.0, pdag_engine=self.pdag)
+        # Maintenance can delete persistent data; keep both entry points disabled until validated.
+        self._rem_maintenance_enabled = False
         
         self.world_model = WorldModelEngine(self.context_engine, self.governance, self.eye, self.vsa, self.pdag)
         self.shadow = ShadowSimulator(self.context_engine, self.eye, self.vsa, self.pdag)
@@ -323,7 +325,8 @@ class BrainnetKernel:
                 inatividade = time.time() - self.ultimo_toque_ai
 
                 # Dorme quando a IA fica 3 minutos (180s) sem o usuário mandar mensagem ou falar
-                if inatividade >= 180.0 and not self.esta_dormindo:
+                if (self._rem_maintenance_enabled and inatividade >= 180.0
+                        and not self.esta_dormindo and self.rem_engine.is_system_ready_for_sleep()):
                     self.esta_dormindo = True
                     logger.info("[SONO REM]: 3 minutos sem interação com a IA. Entrando em sono REM...")
                     threading.Thread(target=self._executar_rem_completo, daemon=True).start()
@@ -354,11 +357,19 @@ class BrainnetKernel:
                 logger.debug(f"Ciclo circadiano: {e}")
 
     def _executar_rem_completo(self) -> None:
-        logger.info("[SONO REM]: Injetando ruído de fase (sigma = 0.15*pi) e reciclando memória...")
-        self.rem_engine.execute_full_rem_cycle()
-        self.rem_engine.dream_and_immunize_ui_drifts(self.vsa)
-        if self.ontology:
-            self.ontology.run_deep_rem_dissolution()
+        if not self._rem_maintenance_enabled:
+            logger.info("[SONO REM]: manutencao desativada.")
+            return
+        try:
+            logger.info("[SONO REM]: Injetando ruído de fase (sigma = 0.15*pi) e reciclando memória...")
+            self.rem_engine.execute_full_rem_cycle()
+            self.rem_engine.dream_and_immunize_ui_drifts(self.vsa)
+            if self.ontology:
+                self.ontology.run_deep_rem_dissolution()
+        except Exception:
+            logger.exception("[SONO REM]: ciclo interrompido; estado de manutencao nao confirmado.")
+            self._rem_maintenance_enabled = False
+            self.esta_dormindo = False
 
     async def start(self) -> None:
         if self.is_running:
@@ -1051,6 +1062,7 @@ class BrainnetBridge:
             return self._kernel._kiwix_hmem
 
     def _executar_comando_interno(self, prompt_raw: str, p_low: str, p_norm: str) -> Dict[str, Any]:
+        from adaptive_resource_controller import current_task_budget
         if p_norm.startswith('/offline-ref '):
             from kiwix_knowledge import KiwixKnowledge, recall_reference
             reference_id = prompt_raw[len('/offline-ref '):].strip()
@@ -1075,7 +1087,6 @@ class BrainnetBridge:
                     'sources':[result['source']] if 'source' in result else []}
         if p_norm.startswith('/offline '):
             from kiwix_knowledge import KiwixKnowledge, record_reference
-            from adaptive_resource_controller import current_task_budget
             directory = Path(__file__).resolve().parent.parent / 'knowledge' / 'zim'
             knowledge = getattr(self, '_kiwix_knowledge', None)
             if knowledge is None:
@@ -1441,6 +1452,8 @@ class BrainnetBridge:
                 return {"reply": corpo_st, "logs": []}
             return {"reply": "⚠️ Harvester offline.", "logs": []}
         if p_norm in ("/rem status", "/sono status"):
+            if not self._kernel._rem_maintenance_enabled:
+                return {"reply": "Manutenção REM desativada neste perfil de estabilização.", "logs": [], "status": "REM_DISABLED"}
             st_sono = "😴 Dormindo (Processando em segundo plano)" if self._kernel.esta_dormindo else "⚡ Acordada (Atenta ao operador)"
             inatividade_s = int(time.time() - self._kernel.ultimo_toque_ai)
             return {
@@ -1453,12 +1466,7 @@ class BrainnetBridge:
             }
 
         if p_norm.startswith("/rem"):
-            def _rem_th():
-                self._kernel.rem_engine.execute_full_rem_cycle()
-                self._kernel.rem_engine.dream_and_immunize_ui_drifts(self._kernel.vsa)
-            threading.Thread(target=_rem_th, daemon=True).start()
-            self._falar_seguro("Sono REM e vacinação estocástica iniciados.")
-            return {"reply": "🌙 **Sono REM Ativado**: Poda sináptica e vacina de UI iniciadas.", "logs": []}
+            return {"reply": "Manutenção REM desativada neste perfil de estabilização.", "logs": [], "status": "REM_DISABLED"}
 
         if p_norm in ("/code", "/code on"):
             self._modo_coder_ativo = True
