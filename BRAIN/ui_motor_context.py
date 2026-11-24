@@ -212,6 +212,9 @@ def waypoints(start,target,limit=150):
 
 def hit_target(point, window, descriptor):
     """UIA point coordinates are physical screen coordinates; verify the actual hit or its ancestor."""
+    if descriptor.get('source')=='OCR':
+        from ui_ocr_grounding import revalidate
+        return revalidate(point,window,descriptor)
     import uiautomation as auto
     if not same_window(window,foreground=True):
         return False
@@ -270,13 +273,26 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
     if not unchanged(observe_physical_monitor(),before) or held():
         return result('USER_INPUT_CHANGED')
     scene=observe(window,eye,foreground=True)
-    if scene['status']!='OBSERVED':
+    match=resolve_target(scene.get('controls',[]),step['target'])
+    if scene['status'] not in ('OBSERVED','NO_VISIBLE_CONTROLS','UIA_UNAVAILABLE'):
         return result(scene['status'])
-    match=resolve_target(scene['controls'],step['target'])
+    if match['status']=='TARGET_NOT_FOUND':
+        from ui_ocr_grounding import find_text
+        active()
+        visual=find_text(window,step['target'])
+        active()
+        if visual['status']=='RESOLVED':
+            if step['action']=='click_target':
+                return result('OCR_AFFORDANCE_UNVERIFIED',status='OBSERVED',name=visual['control']['name'],
+                              target=center(visual['control']['rect']),source='OCR')
+            match=visual
+        else:
+            return result('TARGET_NOT_FOUND',control_count=len(scene.get('controls',[])),raw_count=scene.get('raw_count'),
+                          rejected_matches=[c for c in scene.get('rejected',[]) if normalize(step['target']) in normalize(c['name'])][:8],
+                          similar_names=[c['name'] for c in scene.get('controls',[]) if normalize(step['target']) in normalize(c['name'])][:8],
+                          ocr_status=visual['status'],ocr_error=visual.get('error'),ocr_similar=visual.get('similar',[]))
     if match['status']!='RESOLVED':
-        return result(match['status'],control_count=len(scene['controls']),raw_count=scene.get('raw_count'),
-                      rejected_matches=[c for c in scene.get('rejected',[]) if normalize(step['target']) in normalize(c['name'])][:8],
-                      similar_names=[c['name'] for c in scene['controls'] if normalize(step['target']) in normalize(c['name'])][:8])
+        return result(match['status'],control_count=len(scene.get('controls',[])),raw_count=scene.get('raw_count'))
     descriptor=match['control']
     target=center(descriptor['rect'])
     rect=tuple(before['monitor_rect'])
@@ -318,7 +334,7 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
         return result('TARGET_CHANGED','PARTIAL' if evidence else 'ACTION_BLOCKED')
     if step['action']=='move_to':
         return result('TARGET_HIT_VERIFIED','EFFECT_VERIFIED',target=target,name=descriptor['name'],
-                      control_type=descriptor['type'],dispatched=bool(evidence))
+                      control_type=descriptor['type'],source=descriptor.get('source','UIA'),dispatched=bool(evidence))
     active()
     ok=effector.mouse_click(step['button'],step['count'])
     return result('INPUT_ACCEPTED' if ok is True else 'INPUT_NOT_CONFIRMED',
