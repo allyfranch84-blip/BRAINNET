@@ -16,24 +16,27 @@ def normalize(value):
                            if not unicodedata.combining(c)).split())
 
 
-def find_window(query):
+def find_window(query, *, allow_minimized=False):
     import win32gui, win32process
     import psutil
     from uia_chat_readonly import inspect_window
+    from intent_grounding import canonical_app
     key = normalize(query)
+    canonical=canonical_app(query)
     if not key:
         return {'status':'TARGET_REQUIRED'}
     matches = []
     def visit(hwnd, _):
         try:
-            if not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+            if not win32gui.IsWindowVisible(hwnd) or (not allow_minimized and win32gui.IsIconic(hwnd)):
                 return True
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             if pid == os.getpid():
                 return True
             title = win32gui.GetWindowText(hwnd)
             process = psutil.Process(pid).name()
-            if not title or not (key in normalize(title) or key in normalize(process)):
+            # For a known application, a browser title mentioning it is not that application.
+            if not title or (canonical_app(process)!=canonical if canonical else not (key in normalize(title) or key in normalize(process))):
                 return True
             identity = inspect_window(hwnd)
             if identity and identity['pid'] == pid:
@@ -263,7 +266,7 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
     if step['action'] not in ('move_to','click_target'):
         return result('INVALID_TARGET_ACTION')
     active()
-    if not same_window(window) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
+    if not same_window(window,allow_minimized=True) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
         return result('CONTEXT_UNAVAILABLE')
     before=observe_physical_monitor()
     if not unchanged(before,expected_cursor) or held():
