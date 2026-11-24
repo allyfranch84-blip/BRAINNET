@@ -300,7 +300,10 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
     descriptor=match['control']
     target=center(descriptor['rect'])
     rect=tuple(before['monitor_rect'])
-    if not (rect[0]<=target[0]<rect[2] and rect[1]<=target[1]<rect[3]):
+    topology=before.get('display_topology',())
+    from display_motor_geometry import route, monitor_at
+    cross=not (rect[0]<=target[0]<rect[2] and rect[1]<=target[1]<rect[3])
+    if cross and not topology:
         return result('TARGET_OTHER_MONITOR',target=target)
     if not hit_target(target,window,descriptor):
         return result('TARGET_OCCLUDED_OR_STALE')
@@ -308,17 +311,22 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
         return result('USER_INPUT_CHANGED')
     start=tuple(before['cursor'])
     try:
-        points=waypoints(start,target)
-    except ValueError:
-        return result('TARGET_TOO_FAR')
+        points=route(start,target,topology) if cross else waypoints(start,target)
+    except ValueError as exc:
+        return result('NO_CONNECTED_DISPLAY_PATH' if cross else 'TARGET_TOO_FAR',target=target)
     for point in points:
         active()
         current=observe_physical_monitor()
+        expected_monitor=monitor_at(start,topology) if cross else (before['monitor'],rect)
+        if expected_monitor is None:
+            return result('DISPLAY_PATH_INVALID','PARTIAL' if evidence else 'ACTION_BLOCKED')
+        expected={**before,'cursor':start,'monitor':expected_monitor[0],'monitor_rect':expected_monitor[1]}
         if (not same_window(window,foreground=True)
-                or not unchanged(current,{**before,'cursor':start}) or held()):
+                or not unchanged(current,expected) or held()
+                or (cross and current.get('display_topology')!=topology)):
             return result('CONTEXT_CHANGED','PARTIAL' if evidence else 'ACTION_BLOCKED')
-        proposal=PhysicalMoveProposal(task_id,uuid.uuid4().hex,start,point,before['monitor'],rect,0,deadline,
-                                      max_distance=150,duration_ms=300)
+        proposal=PhysicalMoveProposal(task_id,uuid.uuid4().hex,start,point,expected_monitor[0],expected_monitor[1],0,deadline,
+                                      max_distance=150,duration_ms=300,display_topology=topology if cross else ())
         approval=PhysicalMoveApproval(proposal)
         if not approval.approve_explicitly(proposal.proposal_id) or not approval.consume(proposal,current):
             return result('SEGMENT_REJECTED','PARTIAL' if evidence else 'ACTION_BLOCKED')
@@ -328,13 +336,19 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
         except Exception:
             return result('MOVE_INTERRUPTED','EFFECT_UNVERIFIED',dispatched=True)
         actual=observe_physical_monitor()
-        if ok is not True or not unchanged(actual,{**before,'cursor':point}):
+        arrived=monitor_at(point,topology) if cross else (before['monitor'],rect)
+        if (ok is not True or arrived is None
+                or not unchanged(actual,{**before,'cursor':point,'monitor':arrived[0],'monitor_rect':arrived[1]})
+                or (cross and actual.get('display_topology')!=topology)):
             return result('MOVE_NOT_CONFIRMED','EFFECT_UNVERIFIED',after=actual.get('cursor'),dispatched=True)
         evidence.append(point)
         start=point
     active()
-    if (not hit_target(target,window,descriptor)
-            or not unchanged(observe_physical_monitor(),{**before,'cursor':target}) or held()):
+    arrived=monitor_at(target,topology) if cross else (before['monitor'],rect)
+    final=observe_physical_monitor()
+    if (arrived is None or not hit_target(target,window,descriptor)
+            or not unchanged(final,{**before,'cursor':target,'monitor':arrived[0],'monitor_rect':arrived[1]})
+            or (cross and final.get('display_topology')!=topology) or held()):
         return result('TARGET_CHANGED','PARTIAL' if evidence else 'ACTION_BLOCKED')
     if step['action']=='move_to':
         return result('TARGET_HIT_VERIFIED','EFFECT_VERIFIED',target=target,name=descriptor['name'],
