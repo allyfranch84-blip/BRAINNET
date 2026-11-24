@@ -327,6 +327,36 @@ class ActuatorBridge:
                                 'before': observed.get('cursor'), 'after': point, 'target': proposal.target,
                                 'latency_ms': round((time.perf_counter()-started)*1000, 3)}
                     return await self._complete_physical(execute_once)
+            case "mouse_cursor_input":
+                # Reuse the native actuator while checking the observed cursor at dispatch.
+                async with self._input_lock:
+                    require_action_allowed(action)
+                    from capability_lab import observe_physical_monitor
+                    from effector import user32
+                    expected = payload.get('expected')
+                    step = payload.get('step')
+                    from motor_intent import validate_plan
+                    validate_plan({'status':'execute', 'steps':[step]})
+                    if step['action'] not in ('click', 'scroll') or not isinstance(expected, dict):
+                        raise ValueError('invalid cursor input')
+                    def execute_cursor_input():
+                        require_action_allowed(action)
+                        current = observe_physical_monitor()
+                        if (current.get('status') != 'OBSERVED' or current.get('coordinate_space') != 'PHYSICAL'
+                                or any(current.get(key) != expected.get(key) for key in ('cursor','monitor','monitor_rect'))):
+                            return {'status':'ACTION_BLOCKED','code':'CURSOR_CONTEXT_CHANGED'}
+                        if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (1, 2, 4, 5, 6)):
+                            return {'status':'ACTION_BLOCKED','code':'MOUSE_BUTTON_HELD'}
+                        require_action_allowed(action)
+                        if step['action'] == 'click':
+                            ok = self._effector.mouse_click(step['button'], step['count'])
+                        else:
+                            ok = self._effector.mouse_scroll(step['direction'], step['count'])
+                        # SendInput acceptance is not proof of the application effect.
+                        return {'status':'INPUT_SENT' if ok is True else 'EFFECT_UNVERIFIED',
+                                'code':'INPUT_ACCEPTED' if ok is True else 'INPUT_NOT_CONFIRMED',
+                                'cursor':current.get('cursor')}
+                    return await self._complete_physical(execute_cursor_input)
             # Physical Actuator Layer (Exclusive Lock)
             case "mouse_move" | "mouse_click" | "mouse_click_at" | "right_click" | "scroll" | "send_text" | "hotkey" | "mouse_drag":
                 async with self._input_lock:
