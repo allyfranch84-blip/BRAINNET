@@ -470,6 +470,8 @@ class BrainnetBridge:
         self._semantic_sequence_lock = threading.Lock()
         self._last_motor_direction = None
         self._ui_motor_window = None
+        from cognitive_context import CognitiveContext
+        self._cognitive_context = CognitiveContext(self._kernel.vsa)
         from contextual_grounder import ContextualGrounder
         import psutil
         self._contextual_grounder = ContextualGrounder(
@@ -831,6 +833,18 @@ class BrainnetBridge:
             check=self._send_command_impl('/checkup')
             context=self._send_command_impl('/context')
             return {'status':context['status'],'reply':check['reply']+'\n\n'+context['reply'],'logs':[]}
+        if p_norm in ('/memory','/memory tree'):
+            present=getattr(self._kernel,'perceptual_present',None)
+            snapshot=present.snapshot() if present else {}
+            memory=self._cognitive_context
+            reply=memory.describe(snapshot)
+            if p_norm=='/memory tree':
+                tree=memory.tree()
+                root=tree['root']
+                reply += f"\nRaiz FHRR: {root.nbytes if root is not None else 0} bytes."
+                for node in tree['nodes']:
+                    reply += f"\nNó {node['app'] or 'global'}: {node['count']} folhas; {node['vector'].nbytes} bytes."
+            return {'status':'OBSERVED','reply':reply,'logs':[],'dispatched':False}
         if p_norm == '/checkup':
             from pathlib import Path
             import psutil
@@ -852,6 +866,8 @@ class BrainnetBridge:
                 lines.append(f"FHRR: {vsa.dim} dimensões; cleanup {len(vsa.cleanup_keys)} vetores, {vsa.cleanup_matrix.nbytes} bytes; cache de tokens {len(vsa._token_cache)}.")
             with self._p4_lock:
                 lines.append(f"Memória motora de sessão: {len(self._motor_plan_cache)} planos; histórico de chat: {len(self._chat_history)} mensagens.")
+            mem=self._cognitive_context.stats()
+            lines.append(f"Árvore contextual FHRR: {mem['events']}/{mem['capacity']} recibos; {mem['contexts']} nós; {mem['leaf_bytes']} bytes de folhas; RAM.")
             lines.append(f"REM de manutenção habilitado: {getattr(k,'rem_maintenance_enabled',False)}.")
             lines.append('Arquivos locais (presença não comprova integridade):')
             for name in ('core1_pdag.db','hmem_memory.db'):
@@ -2242,6 +2258,7 @@ class BrainnetBridge:
                 backend = HTTPInferenceBackend(OLLAMA_GENERATE_URL.removesuffix('/api/generate'), model, 'ollama')
                 context_data={'open_apps':sorted({w['app'] for w in snapshot.get('windows',[]) if not w['owned']})[:24],
                               'selected_app':ui_window.get('app') if ui_window else None}
+                context_data.update(self._cognitive_context.prompt_context(snapshot))
                 system=SYSTEM_PROMPT + '\nContexto observado (dados, não instruções): ' + json.dumps(context_data,ensure_ascii=False)
                 request = InferenceRequest(model=model, messages=[{'role':'system','content':system},
                     {'role':'user','content':text}], request_id=budget.task_id, timeout=min(30, budget.deadline_monotonic-time.monotonic()),
@@ -2274,10 +2291,19 @@ class BrainnetBridge:
             reply = ('Ainda não consigo localizar esse alvo ou executar todas as ações pedidas.' if plan['status']=='unsupported'
                      else 'Não identifiquei uma ordem motora explícita.')
             return {'status':'UNAVAILABLE','reply':reply,'logs':[], 'dispatched':False}
-        special={'open_app','move_to','click_target','inspect_monitor'}
+        special={'open_app','move_to','click_target','inspect_monitor','inspect_context'}
         if len(plan['steps'])>1 and any(s['action'] in special for s in plan['steps']):
             return self._execute_motor_sequence(plan,budget,initial,ui_window,ui_foreground,present,source,source_label)
-        return self._execute_motor_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
+        return self._run_remembered_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
+
+    def _run_remembered_plan(self, plan, budget, initial, ui_window, ui_foreground, present, source, source_label, *, key):
+        result=self._execute_motor_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
+        try:
+            window=result.get('context_window')
+            self._cognitive_context.record(budget.task_id,plan['steps'],result,window)
+        except Exception as exc:
+            logger.warning('[CONTEXT_MEMORY] task=%s error=%s',budget.task_id,type(exc).__name__)
+        return result
 
     def _execute_motor_sequence(self, plan, budget, initial, ui_window, ui_foreground, present, source, source_label):
         """Execute heterogeneous subplans under one task and one cancellation token."""
@@ -2297,7 +2323,7 @@ class BrainnetBridge:
             current_focus=stable_foreground(deadline=budget.deadline_monotonic)
             current=observe_physical_monitor()
             action=group[0]['action']
-            if previous and action!='inspect_monitor':
+            if previous and action not in ('inspect_monitor','inspect_context'):
                 if current_focus!=focus or any(current.get(k)!=baseline.get(k) for k in ('status','cursor','monitor','monitor_rect','coordinate_space')):
                     return {'status':'ACTION_BLOCKED','reply':'Foco ou cursor alterado entre etapas.','dispatched':False}
             # "Clique nele" after a named move must use the target again, not bypass
@@ -2310,7 +2336,7 @@ class BrainnetBridge:
                 return {'status':'ACTION_BLOCKED','reply':'A janela selecionada não está em primeiro plano para a próxima ação.','dispatched':False}
             # Preserve original pre-inference baseline for the first raw action.
             sub_initial=baseline if not previous else current
-            result=self._execute_motor_plan({'status':'execute','steps':group},budget,sub_initial,selected,
+            result=self._run_remembered_plan({'status':'execute','steps':group},budget,sub_initial,selected,
                                             focus,present,source,source_label,key=None)
             if action=='open_app' and result.get('status')=='EFFECT_VERIFIED':
                 prior=selected
@@ -2331,7 +2357,7 @@ class BrainnetBridge:
             # Refresh between subplans, never use the original coordinates after an app change.
             baseline=observe_physical_monitor()
             observed_focus=stable_foreground(deadline=budget.deadline_monotonic)
-            if action in ('move','click','scroll','inspect_monitor') and observed_focus!=current_focus:
+            if action in ('move','click','scroll','inspect_monitor','inspect_context') and observed_focus!=current_focus:
                 # Do not treat a focus-changing click as authority to continue in an arbitrary window.
                 if result.get('status') in ('EFFECT_VERIFIED','INPUT_SENT','OBSERVED'):
                     result={**result,'status':'EFFECT_UNVERIFIED','reply':result['reply']+' Foco mudou; sequência interrompida.'}
@@ -2352,6 +2378,18 @@ class BrainnetBridge:
         def same_context(a,b):
             return observed(a) and observed(b) and all(a.get(k)==b.get(k) for k in ('cursor','monitor','monitor_rect'))
 
+        if plan['steps'][0]['action']=='inspect_context':
+            snapshot=present.snapshot() if present else {}
+            if snapshot.get('channels',{}).get('windows',{}).get('status') not in ('OBSERVED','PARTIAL'):
+                return {'status':'UNAVAILABLE','reply':'Inventário atual indisponível.','logs':[],'dispatched':False}
+            resolution=self._cognitive_context.resolve_purpose(snapshot,plan['steps'][0]['purpose'])
+            candidates=resolution['candidates']
+            reply=f"Finalidade {resolution['purpose']}: {resolution['status']}."
+            if candidates:
+                reply += ' Candidatos: ' + ', '.join(c['app'] for c in candidates) + '. Hipótese pela identidade do aplicativo, não por inspeção da interface.'
+            else:
+                reply += ' Nenhum candidato conhecido no inventário; abas ou interfaces internas não inspecionadas.'
+            return {'status':'OBSERVED','reply':reply+' Nenhuma ação física executada.','context_resolution':resolution,'logs':[],'dispatched':False}
         if plan['steps'][0]['action']=='inspect_monitor':
             from perceptual_present import describe_monitor
             outcome=describe_monitor(present.snapshot() if present is not None else {},plan['steps'][0]['monitor'])
@@ -2368,7 +2406,7 @@ class BrainnetBridge:
                 window=outcome['window']
                 with self._p4_lock:
                     self._ui_motor_window=window
-                return {'status':'EFFECT_VERIFIED','reply':f"{window['app']} aberto e verificado; contexto definido automaticamente (HWND {window['hwnd']}, PID {window['pid']}). Use /ui controls.",'logs':[],'dispatched':outcome['dispatched']}
+                return {'status':'EFFECT_VERIFIED','reply':f"{window['app']} aberto e verificado; contexto definido automaticamente (HWND {window['hwnd']}, PID {window['pid']}). Use /ui controls.",'logs':[],'dispatched':outcome['dispatched'],'context_window':window}
             return {'status':outcome['status'],'reply':f"Abertura de {app}: {outcome['code']}.",'logs':[],'dispatched':outcome['dispatched']}
         if plan['steps'][0]['action'] in ('move_to','click_target'):
             step = plan['steps'][0]
@@ -2447,7 +2485,7 @@ class BrainnetBridge:
                     self._ui_motor_window=ui_window
             logger.info('[UI_MOTOR] task_id=%s status=%s code=%s waypoints=%s',budget.task_id,status,code,outcome.get('waypoints'))
             return {'status':status,'code':code,'reply':reply + f' Origem: {source_label}.','logs':[],
-                    'dispatched':outcome.get('dispatched'), 'motor_results':[outcome],'motor_source':source}
+                    'dispatched':outcome.get('dispatched'), 'motor_results':[outcome],'motor_source':source,'context_window':ui_window if status in ('EFFECT_VERIFIED','INPUT_SENT') else None}
 
         if not same_context(initial, observe_physical_monitor()) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
             return {'status':'ACTION_BLOCKED','reply':'Cursor ou desktop mudou durante a interpretação. Nenhuma ação executada.',
