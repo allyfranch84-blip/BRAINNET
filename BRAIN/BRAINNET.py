@@ -826,6 +826,43 @@ class BrainnetBridge:
                 self._ui_motor_window = found['window']
             window = found['window']
             return {'status':'BOUND','reply':f"Contexto: {window['app']}, HWND {window['hwnd']}, PID {window['pid']}. Use /ui controls para observar os controles.",'logs':[]}
+        if p_norm == '/checkup':
+            from pathlib import Path
+            import psutil
+            k=self._kernel
+            present=getattr(k,'perceptual_present',None)
+            state=present.snapshot() if present else {}
+            ram=psutil.virtual_memory()
+            lines=[f"Perfil: {'mínimo' if k.minimal_mode else 'completo'}; PID {os.getpid()}",
+                   f"RAM disponível: {ram.available//1048576} MiB; processo: {psutil.Process().memory_info().rss//1048576} MiB.",
+                   f"Kernel: {'ativo' if k.is_running else 'inativo'}; workers: {sum(not w.done() for w in getattr(k.bridge,'_workers',()))}."]
+            for attr,label in [('perceptual_present','Presente perceptivo'),('situation_memory','Memória situacional'),
+                    ('situation_index','Índice FHRR situacional'),('pdag','P-DAG'),('rem_engine','REM'),
+                    ('world_model','Modelo preditivo'),('shadow','Simulação contrafactual'),
+                    ('reservoir','Reservatório líquido'),('concept_cortex','Córtex de conceitos'),
+                    ('vision','Visão'),('skill_loader','Habilidades cristalizadas')]:
+                lines.append(f"{label}: {'instanciado (funcionamento não comprovado)' if getattr(k,attr,None) is not None else 'não inicializado'}")
+            vsa=getattr(k,'vsa',None)
+            if vsa is not None:
+                lines.append(f"FHRR: {vsa.dim} dimensões; cleanup {len(vsa.cleanup_keys)} vetores, {vsa.cleanup_matrix.nbytes} bytes; cache de tokens {len(vsa._token_cache)}.")
+            with self._p4_lock:
+                lines.append(f"Memória motora de sessão: {len(self._motor_plan_cache)} planos; histórico de chat: {len(self._chat_history)} mensagens.")
+            lines.append(f"REM de manutenção habilitado: {getattr(k,'rem_maintenance_enabled',False)}.")
+            lines.append('Arquivos locais (presença não comprova integridade):')
+            for name in ('core1_pdag.db','hmem_memory.db'):
+                p=Path(__file__).resolve().parent/name
+                try:
+                    size=p.stat().st_size
+                    lines.append(f'{name}: {size} bytes')
+                except OSError:
+                    lines.append(f'{name}: ausente ou inacessível')
+            skills=Path(__file__).resolve().parent.parent/'HABILIDADES'
+            try:
+                lines.append(f'Habilidades Python no diretório: {sum(1 for p in skills.glob("*.py") if p.is_file())}')
+            except OSError:
+                lines.append('Diretório de habilidades indisponível.')
+            lines.append(f"Janelas no presente: {len(state.get('windows',[]))}; canais: " + ', '.join(f"{n}={s['status']}" for n,s in state.get('channels',{}).items()))
+            return {'status':'OBSERVED','reply':'\n'.join(lines),'logs':[]}
         if p_norm in ('/context','/ui world'):
             present=getattr(self._kernel,'perceptual_present',None)
             if present is None:
@@ -836,12 +873,18 @@ class BrainnetBridge:
             for name,sample in snapshot['channels'].items():
                 value=sample.get('value') or {}
                 lines.append(f"{name}: {sample['status']}/{value.get('status','')} — idade {sample.get('age_ms')} ms")
+            spatial=(snapshot['channels']['spatial'].get('value') or {})
+            inventory=(snapshot['channels']['windows'].get('value') or {})
+            lines.append(f"Inventário: {inventory.get('visible_candidates','?')} candidatos, {inventory.get('rejected','?')} rejeitados, erros: {inventory.get('errors',{})}.")
+            lines.append(f"Monitores: {spatial.get('monitor_status','UNKNOWN')}; cursor: {spatial.get('cursor',{}).get('cursor')}; monitor atual: {spatial.get('cursor_monitor')}.")
+            for m in spatial.get('monitors',[]):
+                lines.append(f"{m['device']} | {m['rect']} | DPI {m['dpi']}" + (' | primário' if m['primary'] else ''))
             for w in windows[:40]:
-                state='minimizada' if w['minimized'] else 'aberta'
+                state='minimizada' if w['minimized'] is True else 'aberta' if w['minimized'] is False else 'estado desconhecido'
                 lines.append(f"{w['app']} | HWND {w['hwnd']} | {state} | {w['rect']}" + (' | foco' if w['hwnd']==snapshot['foreground'] else ''))
             if len(windows)>40:
                 lines.append('Lista limitada a 40 janelas.')
-            return {'status':'OBSERVED' if snapshot['channels']['windows']['status']=='OBSERVED' else 'UNAVAILABLE',
+            return {'status':snapshot['channels']['windows']['status'],
                     'reply':'\n'.join(lines),'logs':[]}
         if p_norm == '/ui controls':
             from adaptive_resource_controller import current_task_budget
@@ -2201,7 +2244,7 @@ class BrainnetBridge:
                     plan = {'status':'execute','steps':[{'action':'move','direction':'any','distance':MAX_DISTANCE}]}
                     source = 'BUILTIN_VERIFIED_CAPABILITY'
                 else:
-                    return {'status':'UNAVAILABLE','reply':f'Interpretação motora indisponível ({type(exc).__name__}) em {OLLAMA_GENERATE_URL}. Consulte /motor status. Nenhuma ação executada.',
+                    return {'status':'UNAVAILABLE','reply':f'Interpretação motora indisponível ({type(exc).__name__}: {str(exc)[:180]}). Endpoint {OLLAMA_GENERATE_URL}. Nenhuma ação executada.',
                             'logs':[], 'dispatched':False}
             else:
                 budget.finish_inference(operation, reported_tokens=result.output_tokens)
