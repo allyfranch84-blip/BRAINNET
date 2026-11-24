@@ -58,3 +58,19 @@ def test_context_query_does_not_accept_action_fields():
     assert validate_plan({'status':'execute','steps':[{'action':'inspect_context','purpose':'communication'}]})
     with pytest.raises(ValueError):
         validate_plan({'status':'execute','steps':[{'action':'inspect_context','purpose':'communication','target':'Andre'}]})
+
+
+def test_planner_never_receives_old_executable_operations():
+    memory=CognitiveContext(FHRRHyperdimensionalEngine(dimension=256))
+    paint=window('mspaint',1,10)
+    notepad=window('notepad',2,20)
+    record(memory,paint,{'action':'move_to','target':'Ampliar'})
+    record(memory,notepad,{'action':'open_app','target':'notepad'})
+    state=snapshot(paint,notepad)
+    facts,ref=memory.planner_context(state,'Abra o Bloco de Notas',paint)
+    assert 'recent_operations' not in facts and 'reference_candidate' not in facts and ref is None
+    facts,ref=memory.planner_context(state,'Clique nesse botão no Paint',notepad)
+    assert ref=={'app':'mspaint','target':'Ampliar','source':'verified_cursor_location'}
+    assert 'recent_operations' not in facts
+    facts,ref=memory.planner_context(state,'Clique nesse botão',notepad)
+    assert ref is None
