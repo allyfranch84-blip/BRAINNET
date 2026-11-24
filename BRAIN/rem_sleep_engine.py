@@ -289,6 +289,8 @@ def execute_skill(*args, **kwargs):
 
     def execute_full_rem_cycle(self) -> Dict[str, Any]:
         """Orquestra o ciclo completo de manutencao do sono."""
+        # Validate the required shared dependency before any persistent write.
+        self._get_pdag()
         t0 = time.perf_counter_ns()
         hmem_pruned = self.prune_hmem_nodes(30)
 
