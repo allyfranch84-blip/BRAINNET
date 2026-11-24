@@ -44,7 +44,8 @@ def test_named_target_has_no_model_supplied_coordinates():
 
 
 @pytest.mark.parametrize('action', ['move_to','click_target'])
-def test_target_motor_reobserves_and_uses_existing_effector(action):
+@pytest.mark.parametrize('initial_focus', [1, 99])
+def test_target_motor_reobserves_and_uses_existing_effector(action, initial_focus):
     from execution_authority import authorization_scope, _physical_move_scope
     window={'hwnd':1,'pid':10,'started':100,'app':'test.exe'}
     state={'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(10,20),'monitor':'DISPLAY','monitor_rect':(0,0,800,600)}
@@ -69,7 +70,7 @@ def test_target_motor_reobserves_and_uses_existing_effector(action):
          patch('win32gui.GetForegroundWindow',return_value=1),patch('effector.user32') as native:
         native.GetAsyncKeyState.return_value=0
         result=execute_target(window,step,eye,motor,task_id='test',deadline=time.monotonic()+30,
-                              expected_cursor=dict(state),expected_foreground=1)
+                              expected_cursor=dict(state),expected_foreground=initial_focus)
     assert result['target']==center(controls[0]['rect'])==state['cursor']
     assert motor.mouse_move.call_count>=2
     if action=='click_target':
@@ -78,3 +79,25 @@ def test_target_motor_reobserves_and_uses_existing_effector(action):
     else:
         assert result['status']=='EFFECT_VERIFIED'
         motor.mouse_click.assert_not_called()
+
+
+def test_unrelated_focus_change_blocks_before_motor():
+    from execution_authority import authorization_scope
+    window={'hwnd':1,'pid':10,'started':100,'app':'test.exe'}
+    state={'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(10,20),'monitor':'DISPLAY','monitor_rect':(0,0,800,600)}
+    motor=Mock()
+    with authorization_scope(threading.Event()),patch('ui_motor_context.same_window',return_value=True), \
+         patch('capability_lab.observe_cursor_monitors',return_value={'interactive_desktop_verified':True}), \
+         patch('capability_lab.observe_physical_monitor',return_value=state), \
+         patch('win32gui.GetForegroundWindow',return_value=555),patch('effector.user32') as native:
+        native.GetAsyncKeyState.return_value=0
+        result=execute_target(window,{'action':'move_to','target':'Salvar'},Mock(),motor,
+                              task_id='test',deadline=time.monotonic()+30,expected_cursor=state,expected_foreground=99)
+    assert result['code']=='FOCUS_CHANGED' and result['observed_focus']==555
+    motor.mouse_move.assert_not_called()
+
+
+def test_app_launch_schema_accepts_only_supported_application():
+    assert validate_plan({'status':'execute','steps':[{'action':'open_app','target':'paint'}]})
+    with pytest.raises(ValueError):
+        validate_plan({'status':'execute','steps':[{'action':'open_app','target':'cmd.exe'}]})
