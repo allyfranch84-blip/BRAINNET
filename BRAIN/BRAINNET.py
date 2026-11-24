@@ -833,6 +833,16 @@ class BrainnetBridge:
             check=self._send_command_impl('/checkup')
             context=self._send_command_impl('/context')
             return {'status':context['status'],'reply':check['reply']+'\n\n'+context['reply'],'logs':[]}
+        if p_norm=='/memory audit':
+            from pathlib import Path
+            from memory_readonly_audit import audit_memory
+            entries=audit_memory(Path(__file__).resolve().parent,seconds=2.)
+            lines=['Auditoria somente leitura; quick_check não comprova qualidade ou recuperação semântica.']
+            for entry in entries:
+                lines.append(f"{entry['file']}: {entry['status']}")
+                for table,count in entry.get('counts',{}).items():
+                    lines.append(f"  {table}: {count if count is not None else 'tabela ausente'}")
+            return {'status':'OBSERVED','reply':'\n'.join(lines),'memory_audit':entries,'logs':[],'dispatched':False}
         if p_norm in ('/memory','/memory tree'):
             present=getattr(self._kernel,'perceptual_present',None)
             snapshot=present.snapshot() if present else {}
