@@ -78,6 +78,51 @@ def eligible_controls(rows, pid):
     return result
 
 
+def activate_selected_window(window, expected_foreground, *, deadline):
+    """Transfer focus only from our own chat to the explicitly selected window."""
+    from execution_authority import require_action_allowed
+    import win32gui, win32process
+    def result(code, current):
+        return {'status':'READY' if code=='FOCUS_READY' else 'ACTION_BLOCKED',
+                'code':code,'expected_focus':expected_foreground,
+                'observed_focus':current,'target_hwnd':window['hwnd']}
+    require_action_allowed('UI_TARGET')
+    current=win32gui.GetForegroundWindow()
+    if not same_window(window):
+        return result('CONTEXT_UNAVAILABLE',current)
+    if current==window['hwnd']:
+        return result('FOCUS_READY',current)
+    if current!=expected_foreground:
+        return result('FOCUS_CHANGED',current)
+    try:
+        _,pid=win32process.GetWindowThreadProcessId(current)
+        if pid!=os.getpid():
+            return result('FOCUS_NOT_OWNED',current)
+        require_action_allowed('UI_TARGET')
+        if time.monotonic()>=deadline:
+            return result('FOCUS_EXPIRED',current)
+        win32gui.SetForegroundWindow(window['hwnd'])
+    except Exception:
+        return result('FOCUS_UNAVAILABLE',win32gui.GetForegroundWindow())
+    end=min(deadline,time.monotonic()+.8)
+    while time.monotonic()<end:
+        require_action_allowed('UI_TARGET')
+        current=win32gui.GetForegroundWindow()
+        if current==window['hwnd'] and same_window(window,foreground=True):
+            return result('FOCUS_READY',current)
+        if current!=expected_foreground:
+            return result('FOCUS_CHANGED',current)
+        time.sleep(.04)
+    return result('FOCUS_UNAVAILABLE',win32gui.GetForegroundWindow())
+
+
+def observe_active(window, eye, *, expected_foreground, deadline):
+    focus=activate_selected_window(window,expected_foreground,deadline=deadline)
+    if focus['status']!='READY':
+        return focus
+    return observe(window,eye,foreground=True)
+
+
 def observe(window, eye, *, foreground=False):
     if not same_window(window,foreground=foreground):
         return {'status':'CONTEXT_CHANGED','controls':[]}
@@ -89,7 +134,35 @@ def observe(window, eye, *, foreground=False):
         # A bounded scan cannot establish uniqueness if it reached its limit.
         if len(rows)>=1200:
             return {'status':'SCAN_LIMIT','controls':[]}
-        return {'status':'OBSERVED' if controls else 'NO_VISIBLE_CONTROLS','controls':controls,'raw_count':len(rows)}
+        from collections import Counter
+        eligible_ids={c['runtime_id'] for c in controls}
+        rejected=[]
+        reasons=Counter()
+        for row in rows:
+            runtime=row.get('runtime_id')
+            if isinstance(runtime,(tuple,list)) and tuple(runtime) in eligible_ids:
+                continue
+            if row.get('process_id')!=window['pid']:
+                reasons['outro processo']+=1
+                continue
+            name=row.get('name')
+            if not isinstance(name,str) or not name.strip():
+                reasons['sem nome']+=1
+                continue
+            if row.get('is_offscreen') is True:
+                reason='fora da vista'
+            elif row.get('is_enabled') is not True:
+                reason='desabilitado/estado desconhecido'
+            elif row.get('control_type') not in CONTROL_TYPES and row.get('invoke_supported') is not True and row.get('expand_collapse_supported') is not True:
+                reason='tipo sem interação reconhecida'
+            else:
+                reason='identidade/geometria/visibilidade incompleta'
+            reasons[reason]+=1
+            # Only control labels, never read edit/document values.
+            if row.get('control_type') not in ('EditControl','DocumentControl','TextControl') and len(name)<=160:
+                rejected.append({'name':name,'type':row.get('control_type'),'reason':reason})
+        return {'status':'OBSERVED' if controls else 'NO_VISIBLE_CONTROLS','controls':controls,'raw_count':len(rows),
+                'rejection_counts':dict(reasons),'rejected':rejected[:150]}
     except Exception:
         return {'status':'UIA_UNAVAILABLE','controls':[]}
 
@@ -169,27 +242,22 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
     before=observe_physical_monitor()
     if not unchanged(before,expected_cursor) or held():
         return result('USER_INPUT_CHANGED')
-    foreground=win32gui.GetForegroundWindow()
-    # A transition to the exact selected window is useful, not a conflicting target.
-    if foreground!=expected_foreground and foreground!=window['hwnd']:
-        return result('FOCUS_CHANGED',expected_focus=expected_foreground,observed_focus=foreground,target_hwnd=window['hwnd'])
-    if foreground!=window['hwnd']:
-        try:
-            _,pid=win32process.GetWindowThreadProcessId(foreground)
-            if pid!=os.getpid():
-                return result('FOCUS_NOT_OWNED',expected_focus=expected_foreground,observed_focus=foreground,target_hwnd=window['hwnd'])
-            active()
-            win32gui.SetForegroundWindow(window['hwnd'])
-        except Exception:
-            return result('FOCUS_UNAVAILABLE')
-    if not same_window(window,foreground=True):
-        return result('FOCUS_UNAVAILABLE',observed_focus=win32gui.GetForegroundWindow(),target_hwnd=window['hwnd'])
+    focus=activate_selected_window(window,expected_foreground,deadline=deadline)
+    if focus['status']!='READY':
+        return result(focus['code'],expected_focus=focus.get('expected_focus'),
+                      observed_focus=focus.get('observed_focus'),target_hwnd=window['hwnd'])
+    # Focus first, then anchor the motor to the current physical cursor.
+    # A changed cursor during the focus handoff is not silently accepted.
+    if not unchanged(observe_physical_monitor(),before) or held():
+        return result('USER_INPUT_CHANGED')
     scene=observe(window,eye,foreground=True)
     if scene['status']!='OBSERVED':
         return result(scene['status'])
     match=resolve_target(scene['controls'],step['target'])
     if match['status']!='RESOLVED':
-        return result(match['status'],control_count=len(scene['controls']),raw_count=scene.get('raw_count'))
+        return result(match['status'],control_count=len(scene['controls']),raw_count=scene.get('raw_count'),
+                      rejected_matches=[c for c in scene.get('rejected',[]) if normalize(step['target']) in normalize(c['name'])][:8],
+                      similar_names=[c['name'] for c in scene['controls'] if normalize(step['target']) in normalize(c['name'])][:8])
     descriptor=match['control']
     target=center(descriptor['rect'])
     rect=tuple(before['monitor_rect'])
