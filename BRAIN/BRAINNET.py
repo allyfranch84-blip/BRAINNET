@@ -915,6 +915,7 @@ class BrainnetBridge:
                 lines.append(f"Memória motora de sessão: {len(self._motor_plan_cache)} planos; histórico de chat: {len(self._chat_history)} mensagens.")
             mem=self._cognitive_context.stats()
             lines.append(f"Árvore contextual FHRR: {mem['events']}/{mem['capacity']} recibos; {mem['contexts']} nós; {mem['leaf_bytes']} bytes de folhas; RAM.")
+            lines.append(f"Diário de experiências: {'habilitado' if os.getenv('BRAINNET_PERSIST_EXPERIENCES','0')=='1' else 'desabilitado'} (efeitos verificados; sem replay automático).")
             lines.append(f"REM de manutenção habilitado: {getattr(k,'rem_maintenance_enabled',False)}.")
             lines.append('Arquivos locais (presença não comprova integridade):')
             for name in ('core1_pdag.db','hmem_memory.db'):
@@ -2348,8 +2349,23 @@ class BrainnetBridge:
             return {'status':'ACTION_BLOCKED','reply':f'Plano rejeitado antes de agir: {exc}. A ordem atual não sustenta todas as ações propostas. Nenhuma ação executada.','logs':[],'dispatched':False}
         special={'open_app','move_to','click_target','inspect_monitor','inspect_context'}
         if len(plan['steps'])>1 and any(s['action'] in special for s in plan['steps']):
-            return self._execute_motor_sequence(plan,budget,initial,ui_window,ui_foreground,present,source,source_label)
-        return self._run_remembered_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
+            outcome=self._execute_motor_sequence(plan,budget,initial,ui_window,ui_foreground,present,source,source_label)
+        else:
+            outcome=self._run_remembered_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
+        # Journal only the complete top-level outcome, not individual subplans.
+        # Opt-in; no changes to existing databases or native-action authority.
+        if os.getenv('BRAINNET_PERSIST_EXPERIENCES','0')=='1':
+            try:
+                from pathlib import Path
+                from experience_journal import ExperienceJournal
+                receipt=ExperienceJournal(Path(__file__).resolve().parent).append(budget.task_id,plan,outcome)
+                if receipt:
+                    outcome['experience_id']=receipt
+                    outcome['reply'] += f"\nExperiência de efeito registrada: {receipt}."
+            except Exception as exc:
+                logger.warning('[EXPERIENCE_JOURNAL] task=%s error=%s',budget.task_id,type(exc).__name__)
+                outcome['reply'] += '\nNão foi possível persistir a experiência; resultado motor inalterado.'
+        return outcome
 
     def _run_remembered_plan(self, plan, budget, initial, ui_window, ui_foreground, present, source, source_label, *, key):
         result=self._execute_motor_plan(plan,budget,initial,ui_window,ui_foreground,present,source,source_label,key=key)
