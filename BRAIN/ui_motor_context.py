@@ -238,3 +238,70 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
                   'INPUT_SENT' if ok is True else 'EFFECT_UNVERIFIED',
                   target=target,name=descriptor['name'],control_type=descriptor['type'],
                   sent_count=step['count'] if ok is True else None,dispatched=True)
+
+
+def open_application(app, *, deadline):
+    """Launch only an enumerated OS application, then verify the live window."""
+    from execution_authority import require_action_allowed
+    import subprocess
+    import win32api
+    import win32gui
+    mapping = {
+        'paint': ('mspaint.exe', ('mspaint.exe',)),
+        'notepad': ('notepad.exe', ('notepad.exe',)),
+        'calculator': ('calc.exe', ('CalculatorApp.exe','Calculator.exe','calc.exe')),
+    }
+    if app not in mapping:
+        return {'status':'ACTION_BLOCKED','code':'UNKNOWN_APP','dispatched':False}
+    executable, processes = mapping[app]
+    def lookup():
+        import win32process
+        import psutil
+        from uia_chat_readonly import inspect_window
+        windows = []
+        def visit(hwnd, _):
+            try:
+                if not win32gui.IsWindowVisible(hwnd) or not win32gui.GetWindowText(hwnd):
+                    return True
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                process = psutil.Process(pid).name()
+                if process.casefold() in tuple(p.casefold() for p in processes):
+                    identity = inspect_window(hwnd)
+                    if identity and identity['pid'] == pid:
+                        windows.append({**identity,'app':process})
+            except Exception:
+                pass
+            return True
+        win32gui.EnumWindows(visit, None)
+        return windows
+    def check():
+        require_action_allowed('OPEN_APP')
+        if time.monotonic() >= deadline:
+            raise TimeoutError('OPEN_APP_EXPIRED')
+    check()
+    matches=lookup()
+    launched=False
+    if not matches:
+        path=os.path.join(win32api.GetSystemDirectory(),executable)
+        if not os.path.isfile(path):
+            return {'status':'UNAVAILABLE','code':'APP_EXECUTABLE_MISSING','dispatched':False}
+        check()
+        subprocess.Popen([path],shell=False)
+        launched=True
+        while time.monotonic() < deadline:
+            check()
+            matches=lookup()
+            if matches:
+                break
+            time.sleep(.15)
+    if len(matches)!=1:
+        return {'status':'GOAL_UNVERIFIED' if launched else 'ACTION_BLOCKED',
+                'code':'APP_WINDOW_AMBIGUOUS' if matches else 'APP_WINDOW_UNCONFIRMED',
+                'dispatched':launched}
+    window=matches[0]
+    check()
+    # Do not steal focus from an unrelated application. A verified open window
+    # is sufficient to bind context; physical actions revalidate focus separately.
+    focused=win32gui.GetForegroundWindow()==window['hwnd']
+    return {'status':'EFFECT_VERIFIED','code':'APP_WINDOW_VERIFIED','window':window,
+            'focused':focused,'dispatched':launched}
