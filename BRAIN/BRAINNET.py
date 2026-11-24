@@ -459,6 +459,7 @@ class BrainnetBridge:
         self._p4_pending = {}
         self._motor_plan_cache = {}
         self._last_motor_direction = None
+        self._ui_motor_window = None
         from contextual_grounder import ContextualGrounder
         import psutil
         self._contextual_grounder = ContextualGrounder(
@@ -795,6 +796,39 @@ class BrainnetBridge:
             if result.get('ok') is not True:
                 return {'status':'ACTION_FAILED','reply':'Não foi possível copiar o histórico.','logs':[]}
             return {'status':'COPIED','reply':f'Histórico copiado ({len(history)} mensagens).','logs':[]}
+        if p_norm == '/ui clear':
+            with self._p4_lock:
+                self._ui_motor_window = None
+            return {'status':'CLEARED','reply':'Contexto de interface removido.','logs':[]}
+        if p_norm == '/ui context' or p_norm.startswith('/ui context '):
+            from ui_motor_context import find_window
+            query = prompt_raw[len('/ui context'):].strip()
+            with self._p4_lock:
+                self._ui_motor_window = None
+            if not query:
+                return {'status':'TARGET_REQUIRED','reply':'Use /ui context <nome do aplicativo ou título da janela aberta>.','logs':[]}
+            try:
+                found = find_window(query)
+            except Exception as exc:
+                return {'status':'UNAVAILABLE','reply':f'Contexto de janela indisponível ({type(exc).__name__}).','logs':[]}
+            if found['status'] != 'BOUND':
+                return {'status':found['status'],'reply':f"Janela não identificada unicamente ({found.get('count',0)} correspondências). Abra uma única janela e use um nome mais específico.",'logs':[]}
+            with self._p4_lock:
+                self._ui_motor_window = found['window']
+            window = found['window']
+            return {'status':'BOUND','reply':f"Contexto: {window['app']}, HWND {window['hwnd']}, PID {window['pid']}. Use /ui controls para observar os controles.",'logs':[]}
+        if p_norm == '/ui controls':
+            from ui_motor_context import observe
+            with self._p4_lock:
+                window = self._ui_motor_window
+            if window is None:
+                return {'status':'TARGET_REQUIRED','reply':'Selecione a janela com /ui context <aplicativo>.','logs':[]}
+            scene = observe(window,self._kernel.eye)
+            if scene['status'] != 'OBSERVED':
+                return {'status':scene['status'],'reply':f"Controles UIA indisponíveis ({scene['status']}).",'logs':[]}
+            names = [f"{c['name']} ({c['type'].removesuffix('Control')})" for c in scene['controls']]
+            shown = names[:60]
+            return {'status':'OBSERVED','reply':f"{window['app']}: {len(names)} controles nomeados, visíveis e habilitados.\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else ''),'logs':[]}
         if p_norm == '/motor status':
             from assistant_prompts import MODELO_PARSER
             from urllib.request import urlopen
@@ -2065,6 +2099,15 @@ class BrainnetBridge:
             return {'status':'ACTION_BLOCKED','reply':'Comando sem contexto ativo.','logs':[], 'dispatched':False}
         key = ' '.join(text.casefold().split())
         initial = observe_physical_monitor()
+        with self._p4_lock:
+            ui_window = self._ui_motor_window
+        ui_foreground = None
+        if ui_window is not None:
+            try:
+                import win32gui
+                ui_foreground = win32gui.GetForegroundWindow()
+            except Exception:
+                pass
         def observed(value):
             return value.get('status') == 'OBSERVED' and value.get('coordinate_space') == 'PHYSICAL'
         def same_context(a, b):
@@ -2113,6 +2156,47 @@ class BrainnetBridge:
         if not same_context(initial, observe_physical_monitor()) or observe_cursor_monitors().get('interactive_desktop_verified') is not True:
             return {'status':'ACTION_BLOCKED','reply':'Cursor ou desktop mudou durante a interpretação. Nenhuma ação executada.',
                     'logs':[], 'dispatched':False}
+
+        if plan['steps'][0]['action'] in ('move_to','click_target'):
+            if ui_window is None or not ui_foreground:
+                return {'status':'TARGET_REQUIRED','reply':'Selecione uma janela aberta com /ui context <aplicativo> antes de interagir com um objeto.','logs':[],'dispatched':False}
+            step = plan['steps'][0]
+            token = budget.cancellation_event
+            async def send_target():
+                with authorization_scope(token):
+                    return await self._kernel.bridge.dispatch('ui_motor_target', {
+                        'window':ui_window,'step':step,'task_id':budget.task_id,
+                        'deadline':budget.deadline_monotonic,'expected_cursor':initial,
+                        'expected_foreground':ui_foreground}, timeout_sec=min(25,max(.01,budget.deadline_monotonic-time.monotonic())))
+            future = None
+            try:
+                budget.check_active()
+                if not self._kernel.loop or not self._kernel.loop.is_running():
+                    raise RuntimeError('kernel offline')
+                future = asyncio.run_coroutine_threadsafe(send_target(),self._kernel.loop)
+                command = future.result(timeout=min(30,max(.01,budget.deadline_monotonic-time.monotonic())))
+                outcome = command.result if command.status=='completed' and isinstance(command.result,dict) else {'status':'EFFECT_UNVERIFIED','code':'DISPATCH_UNCONFIRMED'}
+            except Exception:
+                token.set()
+                if future is not None:
+                    future.cancel()
+                outcome = {'status':'EFFECT_UNVERIFIED','code':'DISPATCH_UNCONFIRMED'}
+            status, code = outcome.get('status'), outcome.get('code')
+            if status=='EFFECT_VERIFIED':
+                reply = f"Cursor sobre {outcome['name']} ({outcome['control_type']}), posição {outcome['target']}; alvo UIA confirmado."
+            elif status=='INPUT_SENT':
+                reply = f"Clique em {outcome['name']} ({outcome['control_type']}), posição {outcome['target']}; {outcome['sent_count']} clique(s) aceito(s). Efeito no aplicativo ainda não verificado."
+            else:
+                reply = f"Alvo {step['target']}: {code}. Nenhuma nova tentativa automática."
+                if code=='TARGET_OTHER_MONITOR':
+                    reply += ' Posicione o cursor no monitor da janela-alvo antes de enviar pelo teclado.'
+                if code=='FOCUS_UNAVAILABLE':
+                    reply += ' O Windows não permitiu ativar a janela selecionada.'
+                if code in ('TARGET_NOT_FOUND','TARGET_AMBIGUOUS'):
+                    reply += ' Consulte /ui controls e informe o nome exato.'
+            logger.info('[UI_MOTOR] task_id=%s status=%s code=%s waypoints=%s',budget.task_id,status,code,outcome.get('waypoints'))
+            return {'status':status,'code':code,'reply':reply + f' Origem: {source_label}.','logs':[],
+                    'dispatched':outcome.get('dispatched'), 'motor_results':[outcome],'motor_source':source}
 
         # Preflight the complete geometry before sending the first operation.
         cursor = tuple(initial['cursor'])
