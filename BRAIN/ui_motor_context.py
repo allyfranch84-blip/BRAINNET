@@ -7,7 +7,8 @@ import unicodedata
 
 CONTROL_TYPES = frozenset(('ButtonControl','SplitButtonControl','MenuItemControl','TabItemControl',
     'CheckBoxControl','RadioButtonControl','ComboBoxControl','EditControl','ListItemControl',
-    'TreeItemControl','HyperlinkControl','SliderControl','ScrollBarControl','DataItemControl'))
+    'TreeItemControl','HyperlinkControl','SliderControl','ScrollBarControl','DataItemControl',
+    'MenuBarControl','ToolBarControl'))
 
 
 def normalize(value):
@@ -64,7 +65,8 @@ def eligible_controls(rows, pid):
         name = row.get('name')
         rect = row.get('rect')
         runtime = row.get('runtime_id')
-        if (row.get('process_id') != pid or row.get('control_type') not in CONTROL_TYPES
+        if (row.get('process_id') != pid or (row.get('control_type') not in CONTROL_TYPES
+                and row.get('invoke_supported') is not True and row.get('expand_collapse_supported') is not True)
             or not isinstance(name,str) or not name.strip() or len(name)>160
             or row.get('is_enabled') is not True or row.get('is_offscreen') is not False
             or not isinstance(runtime,(list,tuple)) or not runtime
@@ -80,14 +82,14 @@ def observe(window, eye, *, foreground=False):
     if not same_window(window,foreground=foreground):
         return {'status':'CONTEXT_CHANGED','controls':[]}
     try:
-        rows = eye.scan_uia_properties(window['hwnd'],max_controls=500)
+        rows = eye.scan_uia_properties(window['hwnd'],max_controls=1200,max_depth=24)
         if not same_window(window,foreground=foreground):
             return {'status':'CONTEXT_CHANGED','controls':[]}
         controls = eligible_controls(rows,window['pid'])
         # A bounded scan cannot establish uniqueness if it reached its limit.
-        if len(rows)>=500:
+        if len(rows)>=1200:
             return {'status':'SCAN_LIMIT','controls':[]}
-        return {'status':'OBSERVED' if controls else 'NO_VISIBLE_CONTROLS','controls':controls}
+        return {'status':'OBSERVED' if controls else 'NO_VISIBLE_CONTROLS','controls':controls,'raw_count':len(rows)}
     except Exception:
         return {'status':'UIA_UNAVAILABLE','controls':[]}
 
@@ -168,25 +170,26 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
     if not unchanged(before,expected_cursor) or held():
         return result('USER_INPUT_CHANGED')
     foreground=win32gui.GetForegroundWindow()
-    if foreground!=expected_foreground:
-        return result('FOCUS_CHANGED')
+    # A transition to the exact selected window is useful, not a conflicting target.
+    if foreground!=expected_foreground and foreground!=window['hwnd']:
+        return result('FOCUS_CHANGED',expected_focus=expected_foreground,observed_focus=foreground,target_hwnd=window['hwnd'])
     if foreground!=window['hwnd']:
         try:
             _,pid=win32process.GetWindowThreadProcessId(foreground)
             if pid!=os.getpid():
-                return result('FOCUS_NOT_OWNED')
+                return result('FOCUS_NOT_OWNED',expected_focus=expected_foreground,observed_focus=foreground,target_hwnd=window['hwnd'])
             active()
             win32gui.SetForegroundWindow(window['hwnd'])
         except Exception:
             return result('FOCUS_UNAVAILABLE')
     if not same_window(window,foreground=True):
-        return result('FOCUS_UNAVAILABLE')
+        return result('FOCUS_UNAVAILABLE',observed_focus=win32gui.GetForegroundWindow(),target_hwnd=window['hwnd'])
     scene=observe(window,eye,foreground=True)
     if scene['status']!='OBSERVED':
         return result(scene['status'])
     match=resolve_target(scene['controls'],step['target'])
     if match['status']!='RESOLVED':
-        return result(match['status'])
+        return result(match['status'],control_count=len(scene['controls']),raw_count=scene.get('raw_count'))
     descriptor=match['control']
     target=center(descriptor['rect'])
     rect=tuple(before['monitor_rect'])
