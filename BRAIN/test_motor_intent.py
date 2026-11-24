@@ -117,7 +117,8 @@ def test_long_relative_move_is_split_at_executor_boundary():
         parse_response('{"status":"execute","steps":[{"action":"move","direction":"up","distance":1201}]}')
 
 
-def test_monitor_query_cannot_be_combined_with_motor_input():
+def test_monitor_query_can_be_composed_but_never_carries_native_input():
     assert parse_response('{"status":"execute","steps":[{"action":"inspect_monitor","monitor":2}]}')
+    assert validate_plan({'status':'execute','steps':[{'action':'inspect_monitor','monitor':2},{'action':'open_app','target':'paint'}]})
     with pytest.raises(ValueError):
-        validate_plan({'status':'execute','steps':[{'action':'inspect_monitor','monitor':2},{'action':'click','button':'left','count':1}]})
+        validate_plan({'status':'execute','steps':[{'action':'inspect_monitor','monitor':2,'button':'left'}]})
