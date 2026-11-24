@@ -10,6 +10,7 @@ import unicodedata
 
 # Each tuple: database, table, identity, searchable label, time, optional count.
 SOURCES=(
+    ('experience_journal.db','verified_experiences','id','label','timestamp',None),
     ('hmem_memory.db','hmem_nodes','node_id','concept_label','timestamp',None),
     ('hmem_memory.db','hmem_schemas','schema_id','concept_label','last_updated','sample_count'),
     ('core1_pdag.db','pdag_nodes','context_key','intent','last_active','consecutive_successes'),
@@ -87,7 +88,7 @@ def recall(directory,query,*,limit=12,seconds=3.0,engine=None):
                     match='FHRR_LEXICAL_CANDIDATE'
                 results.append({'database':name,'table':table,'id':str(ref),'label':str(text),
                                 'timestamp':ts,'count':n,'lexical_score':score,'fhrr_similarity':similarity,'match':match,
-                                'historical_verification':'UNKNOWN','execution_authorized':False})
+                                'historical_verification':'EFFECT_RECORDED' if table=='verified_experiences' else 'UNKNOWN','execution_authorized':False})
             sources.append({'table':table,'status':'READ','scanned':len(rows),'possibly_truncated':len(rows)==5000})
         except (sqlite3.Error,OSError) as exc:
             sources.append({'table':table,'status':'UNAVAILABLE','error':type(exc).__name__})
@@ -114,7 +115,7 @@ def read_record(directory,table,record_id,*,seconds=2.0):
     """Read a single explicitly named record, with a bounded raw payload.
     Do not automatically add the returned payload to a motor/LLM prompt.
     """
-    payloads={'hmem_nodes':'payload_json','hmem_schemas':'payload_json',
+    payloads={'verified_experiences':'payload_json','hmem_nodes':'payload_json','hmem_schemas':'payload_json',
               'pdag_nodes':'pipeline_spec','pdag_syntactic_routes':'pipeline_steps',
               'long_context_state':'cumulative_summary','transitions':'steps_json'}
     source=next((s for s in SOURCES if s[1]==table),None)
@@ -134,4 +135,4 @@ def read_record(directory,table,record_id,*,seconds=2.0):
         return {'status':'NOT_FOUND','execution_authorized':False}
     return {'status':'OBSERVED','table':table,'id':record_id,'label':row[0],
             'timestamp':row[1],'payload':row[2],'truncated':(row[3] or 0)>4000,
-            'historical_verification':'UNKNOWN','execution_authorized':False}
+            'historical_verification':'EFFECT_RECORDED' if table=='verified_experiences' else 'UNKNOWN','execution_authorized':False}
