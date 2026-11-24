@@ -78,6 +78,17 @@ def eligible_controls(rows, pid):
     return result
 
 
+def stable_foreground(*, deadline):
+    """Zero is an incomplete observation during a Windows focus transition."""
+    import win32gui
+    hwnd=win32gui.GetForegroundWindow()
+    end=min(deadline,time.monotonic()+.8)
+    while not hwnd and time.monotonic()<end:
+        time.sleep(.025)
+        hwnd=win32gui.GetForegroundWindow()
+    return int(hwnd or 0)
+
+
 def activate_selected_window(window, expected_foreground, *, deadline):
     """Transfer focus only from our own chat to the explicitly selected window."""
     from execution_authority import require_action_allowed
@@ -87,12 +98,14 @@ def activate_selected_window(window, expected_foreground, *, deadline):
                 'code':code,'expected_focus':expected_foreground,
                 'observed_focus':current,'target_hwnd':window['hwnd']}
     require_action_allowed('UI_TARGET')
-    current=win32gui.GetForegroundWindow()
+    current=stable_foreground(deadline=deadline)
     if not same_window(window):
         return result('CONTEXT_UNAVAILABLE',current)
     if current==window['hwnd']:
         return result('FOCUS_READY',current)
-    if current!=expected_foreground:
+    if not current:
+        return result('FOCUS_TRANSITION_TIMEOUT',0)
+    if expected_foreground and current!=expected_foreground:
         return result('FOCUS_CHANGED',current)
     try:
         _,pid=win32process.GetWindowThreadProcessId(current)
@@ -101,17 +114,21 @@ def activate_selected_window(window, expected_foreground, *, deadline):
         require_action_allowed('UI_TARGET')
         if time.monotonic()>=deadline:
             return result('FOCUS_EXPIRED',current)
-        win32gui.SetForegroundWindow(window['hwnd'])
+        try:
+            win32gui.SetForegroundWindow(window['hwnd'])
+        except Exception:
+            # The API can report failure even while the activation is in flight.
+            pass
     except Exception:
         return result('FOCUS_UNAVAILABLE',win32gui.GetForegroundWindow())
-    end=min(deadline,time.monotonic()+.8)
+    end=min(deadline,time.monotonic()+1.2)
     while time.monotonic()<end:
         require_action_allowed('UI_TARGET')
-        current=win32gui.GetForegroundWindow()
-        if current==window['hwnd'] and same_window(window,foreground=True):
-            return result('FOCUS_READY',current)
-        if current!=expected_foreground:
-            return result('FOCUS_CHANGED',current)
+        observed=win32gui.GetForegroundWindow()
+        if observed==window['hwnd'] and same_window(window,foreground=True):
+            return result('FOCUS_READY',observed)
+        if observed and observed!=current:
+            return result('FOCUS_CHANGED',observed)
         time.sleep(.04)
     return result('FOCUS_UNAVAILABLE',win32gui.GetForegroundWindow())
 
@@ -119,8 +136,10 @@ def activate_selected_window(window, expected_foreground, *, deadline):
 def observe_active(window, eye, *, expected_foreground, deadline):
     focus=activate_selected_window(window,expected_foreground,deadline=deadline)
     if focus['status']!='READY':
-        return focus
-    return observe(window,eye,foreground=True)
+        # A read-only inspection can still describe an inactive window.
+        scene=observe(window,eye,foreground=False)
+        return {**scene,'foreground_verified':False,'focus_code':focus['code']}
+    return {**observe(window,eye,foreground=True),'foreground_verified':True}
 
 
 def observe(window, eye, *, foreground=False):
