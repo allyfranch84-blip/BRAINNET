@@ -5,7 +5,8 @@ import effector
 from execution_authority import PhysicalMoveProposal,PhysicalMoveApproval,authorization_scope
 from actuator_bridge import ActuatorBridge
 class Fake:
- def __init__(self,fail=False):self.pos=(20,30);self.fail=fail;self.sets=0
+ def __init__(self,fail=False,held=0):self.pos=(20,30);self.fail=fail;self.sets=0;self.held=held
+ def GetAsyncKeyState(self,vk):return 0x8000 if vk==self.held else 0
  def GetPhysicalCursorPos(self,p):p._obj.x,p._obj.y=self.pos;return 1
  def SetPhysicalCursorPos(self,x,y):
   self.sets+=1
@@ -16,8 +17,8 @@ def make(deadline=None):
  p=PhysicalMoveProposal('task',uuid.uuid4().hex,(20,30),(30,30),'DISPLAY',(0,0,100,100),0,deadline or time.monotonic()+30)
  return p,PhysicalMoveApproval(p)
 
-def invoke(p,a,*,pos=(20,30),fail=False):
- f=Fake(fail); bridge=ActuatorBridge(effector_instance=effector.Effector())
+def invoke(p,a,*,pos=(20,30),fail=False,held=0):
+ f=Fake(fail,held); bridge=ActuatorBridge(effector_instance=effector.Effector())
  async def call_direct(fn,*args,**kwargs):return fn(*args,**kwargs)
  obs={'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':pos,'monitor':'DISPLAY','monitor_rect':(0,0,100,100)}
  with authorization_scope(threading.Event()),patch.object(effector,'user32',f),patch('capability_lab.observe_physical_monitor',side_effect=lambda: {**obs, 'cursor':f.pos} if f.sets else obs),patch.object(ActuatorBridge,'_complete_physical',side_effect=call_direct):
@@ -40,6 +41,11 @@ def test_context_change_consumes_and_blocks():
 def test_set_failure_is_unverified():
  p,a=make();assert a.approve_explicitly(p.proposal_id)
  r,f=invoke(p,a,fail=True);assert r['status']=='EFFECT_UNVERIFIED' and f.sets==1
+
+@pytest.mark.parametrize('button', [1, 2, 4, 5, 6])
+def test_held_mouse_button_prevents_movement(button):
+ p,a=make();assert a.approve_explicitly(p.proposal_id)
+ r,f=invoke(p,a,held=button);assert r['status']=='ACTION_FAILED' and f.sets==0
 
 def test_expired_and_wrong_task():
  from dataclasses import replace
