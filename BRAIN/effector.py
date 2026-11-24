@@ -80,6 +80,9 @@ class Effector:
             from execution_authority import _physical_move_scope
             if (before.x, before.y) != _physical_move_scope.get().start:
                 return False
+            # Do not turn an intentional move into an accidental drag.
+            if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (1, 2, 4, 5, 6)):
+                raise PermissionError('MOUSE_BUTTON_HELD')
             require_specific_physical_move(x, y)
             if not user32.SetPhysicalCursorPos(x, y):
                 return False
