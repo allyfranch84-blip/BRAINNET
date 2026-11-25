@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "BRAINNET v7 - Deep DOM & Hitbox Bridge",
-  "version": "7.0.0",
+  "version": "7.0.1",
   "description": "Ponte neural de leitura semântica, links ordinais e caixas de colisão exatas para a BRAINNET.",
   "permissions": [
     "tabs",
     "activeTab",
     "scripting",
-    "alarms"
+    "alarms",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>",
@@ -15,5 +16,6 @@
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "options_page": "options.html"
 }
