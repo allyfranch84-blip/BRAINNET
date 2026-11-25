@@ -12,3 +12,10 @@
 O aviso de finalização do pyreadline3 apareceu em processos de pytest que retornaram código zero. Os seis testes visuais históricos ficam fora de safe-full. Não houve atualização de baseline.
 
 O sincronizador passou em 10 testes em 2,15 s, com arquivos temporários, um repositório Git descartável, conflito, reentrada, rollback e reexecução. Na primeira execução, quatro casos encontraram WinError 206 no caminho temporário longo. Repetição na unidade A usou `--basetemp .pytest_runs/<novo-id-curto>`. A aplicação efetiva desse pacote na instalação não é necessária: seus três destinos já correspondem aos hashes de chegada.
+
+## P55.1 — revisão remota
+| Verificação | Classe | Evidência |
+|---|---|---|
+| Protocolo autenticado | PASS_UNIT | 4 casos Python, Linux isolado, blobs remotos iguais |
+| Pesquisa de fundo | PASS_UNIT | 5 casos Node, Chromium simulado, blobs remotos iguais |
+| Extensão/ponte e foco Windows | NOT_TESTED | Probe opt-in publicado; ver BRAINNET_P55_REVIEW.md |
