@@ -1,0 +1,30 @@
+{
+  "mission_reports\\mission_m_c3572fe879.md": {
+    "hash": "f6220a49e1e3ec1514d806cb10dde545f861680df484303fd80edccc2fc72ab6",
+    "path": "mission_reports\\mission_m_c3572fe879.md",
+    "content": "# Mission Report: m_c3572fe879\n**Data:** 2026-11-25T19:37:33.840622+00:00\n**Objetivo:** Pergunte ao ChatGPT: Qual é a capital do Brasil?\n**Resultado:** FAILED\n\n## Plano Executado\n- **Estratégia:** architect_first\n- **Arquivos alterados:** motor_intent.py\n- **Testes executados:** \n- **Nível de risco:** high\n\n## Resultados dos Testes\n\n## Lições Aprendidas (Self-Reflection)\n- **O que falhou:** A execução não passou nos testes.\n- **Ação futura:** Na próxima tentativa, incluir mais evidências no prompt ou revisar a ordem das dependências.\n",
+    "length": 540,
+    "updated_at": "1795635453.8416557"
+  },
+  "mission_reports\\mission_m_925919dfa9.md": {
+    "hash": "0902e280cd3835880ec3d4fa2816ab20f1bc6969a6d19594a36812006db15ec2",
+    "path": "mission_reports\\mission_m_925919dfa9.md",
+    "content": "# Mission Report: m_925919dfa9\n**Data:** 2026-11-25T19:39:18.289412+00:00\n**Objetivo:** Pergunte ao ChatGPT: Qual é a capital do Brasil?\n**Resultado:** SUCCESS\n\n## Plano Executado\n- **Estratégia:** direct_impl\n- **Arquivos alterados:** motor_intent.py\n- **Testes executados:** \n- **Nível de risco:** high\n\n## Resultados dos Testes\n\n## Lições Aprendidas (Self-Reflection)\n- A estratégia utilizada foi eficiente e pode ser repetida para missões similares.\n",
+    "length": 454,
+    "updated_at": "1795635558.2904713"
+  },
+  "mission_reports\\mission_m_58e991fca6.md": {
+    "hash": "65580eabc83ed9ef6d1e67d7e60fe0e2eeabd16d1879c674cb255cd9f07e12b5",
+    "path": "mission_reports\\mission_m_58e991fca6.md",
+    "content": "# Mission Report: m_58e991fca6\n**Data:** 2026-11-25T19:56:02.624400+00:00\n**Objetivo:** Pergunte ao ChatGPT: Qual é a capital do Brasil?\n**Resultado:** FAILED\n\n## Plano Executado\n- **Estratégia:** direct_impl\n- **Arquivos alterados:** motor_intent.py\n- **Testes executados:** \n- **Nível de risco:** high\n\n## Resultados dos Testes\n\n## Lições Aprendidas (Self-Reflection)\n- **O que falhou:** A execução não passou nos testes.\n- **Ação futura:** Na próxima tentativa, incluir mais evidências no prompt ou revisar a ordem das dependências.\n",
+    "length": 536,
+    "updated_at": "1795636562.6244009"
+  },
+  "mission_reports\\mission_m_ecd5180e76.md": {
+    "hash": "7b81cf7687444c93ce03385590871b5af33800c79c9e159a06ffc97cc7a21013",
+    "path": "mission_reports\\mission_m_ecd5180e76.md",
+    "content": "# Mission Report: m_ecd5180e76\n**Data:** 2026-11-25T19:56:55.603704+00:00\n**Objetivo:** Pergunte ao ChatGPT: Qual é a capital do Brasil?\n**Resultado:** SUCCESS\n\n## Plano Executado\n- **Estratégia:** direct_impl\n- **Arquivos alterados:** motor_intent.py\n- **Testes executados:** \n- **Nível de risco:** high\n\n## Resultados dos Testes\n\n## Lições Aprendidas (Self-Reflection)\n- A estratégia utilizada foi eficiente e pode ser repetida para missões similares.\n",
+    "length": 454,
+    "updated_at": "1795636615.604708"
+  }
+}

@@ -5,7 +5,7 @@ import json
 import random
 from pathlib import Path
 
-from distill_data_generator import ROLES_PROMPT, PIPELINE_PROMPT
+from BRAIN.distill_data_generator_72b import ROLES_PROMPT, PIPELINE_PROMPT
 
 def main():
     parser = argparse.ArgumentParser()

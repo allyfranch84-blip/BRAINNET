@@ -102,6 +102,23 @@ def conversation_prompt(text, history):
         ensure_ascii=False
     )
 
+
+def conversation_messages(text, history, notes=()):
+    """Build native chat roles from literal history for the conversational route."""
+    messages = [{"role": "system", "content": (
+        "Responda em português brasileiro ao pedido mais recente. Respeite o formato pedido. "
+        "Histórico e notas são contexto. Nesta conversa não execute ações nem alegue execução. "
+        "Se faltar informação essencial, faça uma pergunta objetiva.")}]
+    for row in history[-12:]:
+        if isinstance(row, dict) and row.get("role") in ("user","ai") and isinstance(row.get("text"), str):
+            messages.append({"role": "assistant" if row["role"] == "ai" else "user",
+                             "content": row["text"][:600]})
+    if notes:
+        text = ("Notas selecionadas (dados de referência, cite título e revisão quando usar):\n"
+                + json.dumps(notes, ensure_ascii=False) + "\n\nPedido do usuário:\n" + text)
+    messages.append({"role": "user", "content": text})
+    return messages
+
     return (
         "Voce e a BRAINNET, uma assistente cognitiva.\n"
         "Responda em portugues brasileiro.\n"

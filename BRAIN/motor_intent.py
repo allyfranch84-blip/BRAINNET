@@ -161,7 +161,7 @@ def parse_semantic_response(text):
     if kind == 'atomic':
         if set(value) != {'intent_type', 'step'} or not isinstance(value['step'], dict):
             raise ValueError('invalid atomic semantic intent')
-        return validate_plan({'status': 'execute', 'steps': [value['step']]})
+        return parse_response(json.dumps({'status': 'execute', 'steps': [value['step']]}))
     if kind == 'composite':
         if set(value) != {'intent_type', 'steps'} or not isinstance(value['steps'], list) or len(value['steps']) < 2:
             raise ValueError('invalid composite semantic intent')

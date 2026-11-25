@@ -63,7 +63,7 @@ def cases(count=500):
         verb = random.choice(verbs)
         text = f"Registro {i}: {random.choice(items)} teste, pontuação! Tudo certo?"
         folder = random.choice(folders)
-        path = rf"C:\Users\usuario_exemplo\{folder}\brainnet_{i}.txt"
+        path = rf"C:\Users\Public\{folder}\brainnet_{i}.txt"
         query = f"documentação {random.choice(items)} exemplo {i}"
         delay = float(random.randint(1, 10))
         
