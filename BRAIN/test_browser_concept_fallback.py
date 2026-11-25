@@ -1,6 +1,6 @@
 import json
 import sqlite3
-import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,7 +15,7 @@ TEXT = "Um aplicativo é um programa de computador destinado a realizar tarefas 
 
 def browser_for(bridge, *, navigation_error=False, excerpt=TEXT):
     browser = object.__new__(BrowserDeepBridge)
-    browser._last_heartbeat = time.time()
+    browser._transport = SimpleNamespace(connected=True)
     browser._research_tab_ids = {55}  # An unrelated previous research tab must survive.
     browser.ensure_preferred_browser = MagicMock(return_value="thorium")
     browser.effector = MagicMock()
@@ -84,7 +84,7 @@ def test_good_api_evidence_does_not_open_browser(semantic_bridge):
 
 def test_disconnected_extension_is_attempted_before_model_fallback(semantic_bridge):
     browser = browser_for(semantic_bridge)
-    browser._last_heartbeat = 0
+    browser._transport.connected = False
     with patch.object(semantic_bridge, "web_search_autonomous", return_value={"ok": False}), \
          patch("urllib.request.urlopen", return_value=response(json.dumps(LOCAL))):
         result = semantic_bridge.learn_concept_web("aplicativo")
