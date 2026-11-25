@@ -24,3 +24,9 @@ Recursos adicionais podem ser baixados com instruções claras e explicação de
 O relato pode preceder as mudanças locais do Codex de 25/11: a versão efetivamente executada no momento dos testes não foi registrada. Codex relatou prova real de /kernel status e criação/leitura de nota, timeout ao retornar à primeira conversa e teste de esclarecimento com despacho substituído. Essas evidências posteriores não anulam o relato nem comprovam resolução global.
 
 Próximo passo: recuperar alterações locais inéditas por inventário de hashes e diff direcionado; não sobrescrever nem publicar bancos, conversas, configurações ou segredos. Priorizar falhas funcionais e reexecutar somente casos corrigidos. A P52.1 de seleção de modelos e a P55.2 de navegador são candidatas independentes, não correções instaladas.
+
+## Evidências históricas recuperadas de conversa anterior
+- Criação de nota em linguagem natural falhou; leitura de `[[teste 1]]` falhou.
+- Movimento para cima funcionou na segunda tentativa.
+- Quadrado de 100 px por lado, sem pressionar botão, teve quatro segmentos executados e verificados em um ensaio P48. Triângulo estava indisponível naquele ponto histórico (P49 posterior não comprova regressão ou aprovação atual).
+- A bateria manual completa e suas marcações não foram recuperadas. Essas observações não representam a versão atual instalada; usá-las como casos históricos de regressão.
