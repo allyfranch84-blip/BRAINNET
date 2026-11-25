@@ -17,10 +17,17 @@ function extractGoogleResults() {
   return {url: location.href, title: document.title.slice(0, 160), links};
 }
 
+function commandIsFresh(cmd, now = Date.now()) {
+  return Number.isSafeInteger(cmd?.deadline_epoch_ms) && cmd.deadline_epoch_ms > now;
+}
+
 async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => setTimeout(r, ms))) {
+  if (!commandIsFresh(cmd)) return {ok:false, error:'Command expired or missing deadline'};
   if (typeof cmd.query !== 'string' || !cmd.query.trim() || cmd.query.length > 500) return {ok:false, error:'Invalid query'};
   let owned = null, windowId = null, takenOver = false, result = {ok:false, error:'Incomplete research'};
-  const activation = info => { if (info.tabId === owned) takenOver = true; };
+  const activated = new Set();
+  const activation = info => { activated.add(info.tabId); if (info.tabId === owned) takenOver = true; };
+  const checkDeadline = () => { if (!commandIsFresh(cmd)) throw Error('Command expired'); };
   api.tabs.onActivated?.addListener(activation);
   try {
     const win = await api.windows.getLastFocused();
@@ -30,11 +37,14 @@ async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => se
     if (!before) throw Error('No active tab for comparison');
     const url = new URL('https://www.google.com/search');
     url.searchParams.set('q',cmd.query.trim());
+    checkDeadline();
     const tab = await api.tabs.create({windowId:win.id, url:url.href, active:false});
     if (!Number.isInteger(tab.id)) throw Error('Tab creation unconfirmed');
     owned = tab.id;
+    takenOver = activated.has(owned);
     let current;
     for (let i=0;i<32;i++) {
+      checkDeadline();
       current = await api.tabs.get(owned);
       if (takenOver || current.active || current.windowId !== win.id) throw Error('Tab taken over or moved');
       if (current.status === 'complete') break;
@@ -43,8 +53,11 @@ async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => se
     if (current.status !== 'complete') throw Error('Navigation timeout');
     const loaded = new URL(current.url);
     if (loaded.origin !== 'https://www.google.com' || loaded.pathname !== '/search') throw Error('Unexpected redirect');
+    checkDeadline();
     const [response] = await api.scripting.executeScript({target:{tabId:owned},func:extractGoogleResults});
     if (!response?.result || !Array.isArray(response.result.links) || response.result.url !== current.url) throw Error('Extraction not confirmed');
+    checkDeadline();
+    if (takenOver) throw Error('Tab taken over by user');
     const [after] = await api.tabs.query({windowId:win.id,active:true});
     result = {ok:response.result.links.length>0, ...response.result, tab_id:owned,
       browser_active_tab_unchanged:after?.id===before.id, mode:'BACKGROUND_READ_ONLY'};
@@ -62,4 +75,4 @@ async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => se
   }
   return result;
 }
-if (typeof module !== 'undefined' && module.exports) module.exports = {runBackgroundResearch};
+if (typeof module !== 'undefined' && module.exports) module.exports = {runBackgroundResearch, commandIsFresh};
