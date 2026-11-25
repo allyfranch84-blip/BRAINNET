@@ -19,10 +19,13 @@ function extractGoogleResults() {
 
 async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => setTimeout(r, ms))) {
   if (typeof cmd.query !== 'string' || !cmd.query.trim() || cmd.query.length > 500) return {ok:false, error:'Invalid query'};
-  let owned = null, result = {ok:false, error:'Incomplete research'};
+  let owned = null, windowId = null, takenOver = false, result = {ok:false, error:'Incomplete research'};
+  const activation = info => { if (info.tabId === owned) takenOver = true; };
+  api.tabs.onActivated?.addListener(activation);
   try {
     const win = await api.windows.getLastFocused();
     if (!Number.isInteger(win.id)) throw Error('No browser window');
+    windowId = win.id;
     const [before] = await api.tabs.query({windowId:win.id, active:true});
     if (!before) throw Error('No active tab for comparison');
     const url = new URL('https://www.google.com/search');
@@ -33,7 +36,7 @@ async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => se
     let current;
     for (let i=0;i<32;i++) {
       current = await api.tabs.get(owned);
-      if (current.active || current.windowId !== win.id) throw Error('Tab taken over or moved');
+      if (takenOver || current.active || current.windowId !== win.id) throw Error('Tab taken over or moved');
       if (current.status === 'complete') break;
       await sleep(250);
     }
@@ -51,10 +54,11 @@ async function runBackgroundResearch(cmd, api, sleep = ms => new Promise(r => se
     if (owned !== null) {
       try {
         const tab = await api.tabs.get(owned);
-        if (tab.active) result.cleanup='USER_ACTIVE_TAB_PRESERVED';
+        if (takenOver || tab.active || tab.windowId !== windowId) result.cleanup='USER_TAB_PRESERVED';
         else { await api.tabs.remove(owned); result.cleanup='OWNED_TAB_REMOVED'; }
       } catch (_) { result.cleanup='UNCONFIRMED'; }
     }
+    api.tabs.onActivated?.removeListener(activation);
   }
   return result;
 }
