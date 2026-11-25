@@ -496,6 +496,13 @@ class BrainnetBridge:
         except Exception as e:
             logger.debug(f"Falha ao empurrar evento: {e}")
 
+    def minimize_for_background(self) -> dict:
+        """Keep the session running and let Windows restore the window normally."""
+        if self._window is None:
+            return {"ok": False}
+        self._window.minimize()
+        return {"ok": True}
+
     def _on_voice_input(self, text: str) -> None:
         logger.info(f"Voz detectada: '{text}'")
         # V9.5-FIX: Envia o texto falado para o chat como mensagem do usuário
@@ -3027,6 +3034,7 @@ if __name__ == "__main__":
         atexit.register(kernel.inference_supervisor.stop)
         kernel.inference_supervisor.launch(reset=os.getenv('BRAINNET_RESET_INFERENCE','0')=='1')
     bridge = BrainnetBridge(kernel)
+    kernel.bridge.pointer_observer = lambda event: bridge._push_event("aios:pointer", event)
 
     t = threading.Thread(target=start_kernel_thread, args=(kernel,), daemon=True)
     t.start()

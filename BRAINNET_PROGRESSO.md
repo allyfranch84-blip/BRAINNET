@@ -1,5 +1,11 @@
 # BRAINNET — registro de desenvolvimento
 
+## Indicadores de ponteiro e trabalho com a janela minimizada
+
+- A MasterShell oficial recebeu controle Mostrar/Ocultar cursores e botão Minimizar e continuar. Cada comando de ponteiro entra e sai do painel pelo seu próprio ID. As coordenadas exibidas são alvos informados ao executor, quando disponíveis.
+- A entrada física continua serializada pelo ActuatorBridge. Através desta versão, trabalho sem exibição significa manter a BRAINNET em execução com sua janela minimizada. Cursores físicos independentes e ações nativas invisíveis permanecem pendentes.
+- Verificação: build Vite concluído; 18 testes de aprovação e sequência motor passaram mais o teste de dois ponteiros concorrentes na fila. A GUI real ainda precisa de ensaio.
+
 ## Leia primeiro — missão e ordem de execução
 
 O usuário autorizou desenvolvimento, testes reais e publicação de código revisado no GitHub privado. A meta é integrar compreensão de português, esclarecimento de pedidos vagos, execução, observação independente, diagnóstico de falhas e aprendizado reutilizável. Avançar por tarefas verificáveis, com registro a cada rodada.

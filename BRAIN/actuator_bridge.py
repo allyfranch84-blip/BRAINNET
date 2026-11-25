@@ -55,6 +55,7 @@ class ActuatorBridge:
         "_input_lock",
         "_sensor_sem",
         "_max_workers",
+        "pointer_observer",
     )
 
     def __init__(
@@ -72,6 +73,7 @@ class ActuatorBridge:
         self._input_lock = asyncio.Lock()
         self._sensor_sem = asyncio.Semaphore(2)
         self._max_workers = max_workers
+        self.pointer_observer = None
 
     async def start(self) -> None:
         if self._running:
@@ -129,6 +131,11 @@ class ActuatorBridge:
                 error="Bridge queue full; command dropped under high pressure.",
             )
 
+        observer = self.pointer_observer
+        pointer = action.startswith("mouse_") or action in ("right_click", "scroll", "ui_motor_target")
+        if observer and pointer:
+            target = (payload.get("x2"), payload.get("y2")) if action == "mouse_drag" else (payload.get("x"), payload.get("y"))
+            observer({"id": cmd_id, "action": action, "target": target, "active": True})
         try:
             return await fut
         except asyncio.CancelledError:
@@ -138,6 +145,9 @@ class ActuatorBridge:
                 if token is not None:
                     token.set()
             raise
+        finally:
+            if observer and pointer:
+                observer({"id": cmd_id, "active": False})
 
     async def _worker_loop(self, worker_name: str) -> None:
         while self._running:

@@ -1814,6 +1814,21 @@ const PAGE = {
 
 export default function MasterShell() {
   const kernel = useKernel();
+  const [showPointers, setShowPointers] = useState(true);
+  const [pointers, setPointers] = useState({});
+  useEffect(() => {
+    const update = ({ detail }) => {
+      if (typeof detail?.id !== "string") return;
+      setPointers(previous => {
+        const next = { ...previous };
+        if (detail.active) next[detail.id] = detail;
+        else delete next[detail.id];
+        return next;
+      });
+    };
+    window.addEventListener("aios:pointer", update);
+    return () => window.removeEventListener("aios:pointer", update);
+  }, []);
   const [effortMode, setEffortMode] = useState(null);
   const [effortError, setEffortError] = useState('Aguardando configuração do Kernel');
   const [conversationStatus, setConversationStatus] = useState(null);
@@ -2224,6 +2239,22 @@ export default function MasterShell() {
            style={{ ...THEMES[theme], fontFamily: DISPLAY, color: "var(--text)", background: widgetMode ? "transparent" : "radial-gradient(120% 90% at 50% 100%,var(--bg-a) 0%,var(--bg-b) 75%)", transition: "color .5s" }}>
         
         {/* Bordas de redimensionamento (invisíveis) */}
+        <div className="absolute bottom-3 right-4 z-[90] rounded-lg p-2 text-xs"
+             style={{ background: "var(--chip)", border: "1px solid var(--edge)" }}>
+          <button type="button" aria-pressed={showPointers} onClick={() => setShowPointers(value => !value)}>
+            {showPointers ? "Ocultar cursores" : "Mostrar cursores"}
+          </button>
+          {" · "}
+          <button type="button" onClick={() => kernel.call("minimize_for_background")}>
+            Minimizar e continuar
+          </button>
+          {showPointers && Object.values(pointers).slice(0, 12).map(({id, action, target}) => (
+            <div key={id} className="pointer-events-none mt-1" title="Comando pendente ou em execução">
+              <span aria-hidden="true">➤</span> {action} · {id.slice(-4)}
+              {target?.every(Number.isInteger) ? ` (${target.join(", ")})` : ""}
+            </div>
+          ))}
+        </div>
         {[
           { dir: "top", cls: "top-0 left-2 right-2 h-1.5 cursor-ns-resize" },
           { dir: "bottom", cls: "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize" },
