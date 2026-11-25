@@ -10,3 +10,6 @@ O sincronizador novo usa `updates/release.json` no mesmo commit do payload e con
 
 ## Retomada remota ChatGPT (P55.1)
 Nesta branch de revisão apenas, leia `BRAINNET_P55_REVIEW.md` antes de integrar. O canal `updates/local` não foi alterado nesta rodada. Não substituir as mudanças locais do Codex. Protocolo e pesquisa de fundo passaram em testes isolados; integração Windows pendente.
+
+## P55.2 — checkpoint de continuação
+Leia `BRAINNET_P55_2_REVIEW.md` primeiro (transporte HTTP autenticado testado; 14 Python e 6 JS no total focalizado). O código de revisão não foi instalado no Windows nem promovido para `updates/local`. Preserve alterações locais do Codex que ainda não chegaram ao GitHub. Próximo marco: validação conjunta da ponte/extensão no Windows e integração da pesquisa ao catálogo.
