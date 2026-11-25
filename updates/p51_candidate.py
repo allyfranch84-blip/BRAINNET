@@ -54,6 +54,21 @@ def load(chat_id):
         row=con.execute("SELECT messages FROM chats WHERE id=?", (_id(chat_id),)).fetchone()
     return json.loads(row[0]) if row else []
 
+def recall(term, limit=8):
+    term=term.strip().casefold()
+    if not 2<=len(term)<=120:raise ValueError("Informe um termo de 2 a 120 caracteres.")
+    hits=[]
+    with _db() as con:
+        rows=con.execute("SELECT id,title,messages FROM chats ORDER BY updated DESC LIMIT 25").fetchall()
+    for chat_id,title,raw in rows:
+        for item in reversed(json.loads(raw)):
+            pos=item["text"].casefold().find(term)
+            if pos<0:continue
+            excerpt=item["text"][max(0,pos-80):pos+220]
+            hits.append({"chat":title,"id":chat_id,"role":item["role"],"excerpt":excerpt})
+            if len(hits)>=limit:return hits
+    return hits
+
 def history(rows):
     # Bounded context only. Archived messages are data, not current instructions.
     return [{"role":m["role"],"text":m["text"][:3000],"id":str(m.get("id","")),"timestamp":(m.get("timestamp",0)/1000 if isinstance(m.get("timestamp"),(int,float)) and m["timestamp"]>10**11 else 0)} for m in rows[-120:]]
@@ -246,6 +261,16 @@ def patch_kernel(s):
         except ValueError:
             pass
         return {"route":voice_route(text)}''')
+    anchor='        note_result = handle_notes(self, prompt_raw)'
+    s=once(s,anchor,'''        if prompt_raw.casefold().startswith('/memoria buscar '):
+            import workspace_chat_archive as archive
+            try:
+                hits=archive.recall(prompt_raw[len('/memoria buscar '):])
+                text="Trechos recuperados das conversas recentes:\\n\\n"+"\\n\\n".join("- "+h["chat"]+" ("+h["role"]+"): "+h["excerpt"] for h in hits) if hits else "Nenhum trecho encontrado nas últimas 25 conversas arquivadas."
+                return workspace_reply('OBSERVED',text)
+            except ValueError as exc:
+                return workspace_reply('CLARIFICATION_REQUIRED',str(exc))
+'''+anchor)
     return s
 
 def patch_shell(s):
@@ -347,6 +372,12 @@ def test_validation_preserves_saved_chat():
     assert archive.load("valid")[0]["text"]=="original"
     with pytest.raises(ValueError):
         archive.load("../invalid")
+
+def test_recall_from_distinct_conversations():
+    archive.save("a",[{"role":"user","text":"memória episódica"}])
+    archive.save("b",[{"role":"ai","text":"memória semântica"}])
+    hits=archive.recall("MEMÓRIA")
+    assert {x["id"] for x in hits}=={"a","b"}
 
 def test_context_is_bounded():
     rows=[{"role":"user","text":"x"*4000} for _ in range(130)]
