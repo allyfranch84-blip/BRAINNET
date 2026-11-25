@@ -8,15 +8,14 @@
 
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from browser_bridge_transport import BrowserTransport
 import json
 import logging
 import os
-from browser_bridge_protocol import authorized, valid_token, read_result
+from browser_bridge_protocol import valid_token
 from pathlib import Path
 from contextlib import contextmanager
 from contextvars import ContextVar
-import queue
 import re
 import sqlite3
 import subprocess
@@ -61,9 +60,7 @@ class BrowserDeepBridge:
         self.port = port
         self._bridge_token = os.environ.get('BRAINNET_BROWSER_TOKEN', '')
 
-        self._cmd_queue: queue.Queue[Dict[str, Any]] = queue.Queue()
-        self._pending_results: Dict[str, queue.Queue[Dict[str, Any]]] = {}
-        self._last_heartbeat: float = 0.0
+        self._transport = None
         self.last_links_cache: List[Dict[str, Any]] = []
         self.last_page_context: Dict[str, Any] = {}
         self._research_tab_ids = set()
@@ -116,118 +113,35 @@ class BrowserDeepBridge:
             return ""
 
     def _start_server(self) -> None:
-        bridge_ref = self
         if not valid_token(self._bridge_token):
             logger.warning("[DOM BRIDGE] Configure BRAINNET_BROWSER_TOKEN; extensão indisponível.")
             return
+        try:
+            self._transport = BrowserTransport(self._bridge_token, self.port)
+            self.port = self._transport.port
+            logger.info("Ponte DOM Chromium ativa em http://127.0.0.1:%s", self.port)
+        except OSError as exc:
+            logger.error("Falha ao iniciar ponte DOM na porta %s: %s", self.port, exc)
 
-        class BridgeHandler(BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: Any) -> None:
-                return
-
-            def _send_json(self, data: Dict[str, Any], status: int = 200) -> None:
-                raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(raw)))
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                try:
-                    self.wfile.write(raw)
-                except (ConnectionAbortedError, BrokenPipeError):
-                    pass
-
-            def _authenticate(self) -> bool:
-                values = self.headers.get_all("X-Brainnet-Token", [])
-                if len(values) != 1 or not authorized(bridge_ref._bridge_token, values[0]):
-                    self._send_json({"ok": False, "error": "Unauthorized"}, 403)
-                    return False
-                return True
-
-            def do_GET(self) -> None:
-                if not self._authenticate():
-                    return
-                if self.path == "/poll":
-                    bridge_ref._last_heartbeat = time.time()
-                    try:
-                        cmd = bridge_ref._next_active_command(timeout=8.0)
-                        self._send_json(cmd)
-                    except queue.Empty:
-                        self._send_json({"id": None, "action": "IDLE"})
-                elif self.path == "/heartbeat":
-                    bridge_ref._last_heartbeat = time.time()
-                    self._send_json({"ok": True, "status": "alive"})
-                else:
-                    self._send_json({"ok": False, "error": "Unknown route"}, 404)
-
-            def do_POST(self) -> None:
-                if not self._authenticate():
-                    return
-                if self.path != "/result":
-                    self._send_json({"ok": False, "error": "Unknown route"}, 404)
-                    return
-                self.connection.settimeout(5)
-                try:
-                    cmd_id, result = read_result(self.headers, self.rfile)
-                except (ValueError, OSError):
-                    self._send_json({"ok": False, "error": "Invalid result"}, 400)
-                    return
-                pending = bridge_ref._pending_results.get(cmd_id)
-                if pending is None:
-                    self._send_json({"ok": False, "error": "Expired or unknown command"}, 409)
-                    return
-                try:
-                    pending.put_nowait(result)
-                except queue.Full:
-                    self._send_json({"ok": False, "error": "Duplicate result"}, 409)
-                    return
-                bridge_ref._last_heartbeat = time.time()
-                self._send_json({"ok": True})
-
-        def _serve() -> None:
-            try:
-                server = ThreadingHTTPServer(("127.0.0.1", self.port), BridgeHandler)
-                logger.info(f"Ponte DOM Chromium ativa em http://127.0.0.1:{self.port}")
-                server.serve_forever()
-            except Exception as e:
-                logger.error(f"Erro na porta {self.port}: {e}")
-
-        threading.Thread(target=_serve, daemon=True).start()
+    def close(self):
+        transport = getattr(self, "_transport", None)
+        if transport is not None:
+            transport.close()
 
     @property
     def extension_connected(self) -> bool:
-        return (time.time() - self._last_heartbeat) < 12.0
-
-    def _next_active_command(self, timeout: float = 8.0) -> Dict[str, Any]:
-        deadline = time.monotonic() + timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise queue.Empty
-            command = self._cmd_queue.get(timeout=remaining)
-            if command.get("id") in self._pending_results:
-                return command
-            logger.warning("[DOM BRIDGE]: Comando expirado descartado antes da execucao")
+        transport = getattr(self, "_transport", None)
+        if transport is not None:
+            return transport.connected
+        return False
 
     def send_command(self, action: str, timeout: float = 10.0, **kwargs: Any) -> Dict[str, Any]:
-        if not valid_token(getattr(self, "_bridge_token", "")):
-            return {"ok": False, "error": "Autenticação da extensão não configurada."}
+        transport = getattr(self, "_transport", None)
+        if transport is None:
+            return {"ok": False, "error": "Ponte autenticada indisponível.", "dispatch_state": "NOT_DISPATCHED"}
         if action in ("OPEN_TAB_AND_WAIT", "NAVIGATE_ACTIVE_TAB"):
             kwargs.setdefault("extract_options", {"preferred_tags": ["main", "article", "p", "h1"], "max_chars": 3000})
-        cmd_id = uuid.uuid4().hex[:10]
-        res_q: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=1)
-        self._pending_results[cmd_id] = res_q
-
-        payload = {**kwargs, "id": cmd_id, "action": action}
-        self._cmd_queue.put(payload)
-
-        try:
-            return res_q.get(timeout=timeout)
-        except queue.Empty:
-            return {"ok": False, "error": "Extensão do navegador desconectada."}
-        finally:
-            self._pending_results.pop(cmd_id, None)
+        return transport.send(action, timeout, **kwargs)
 
     def research_background(self, query: str) -> Dict[str, Any]:
         """Explicit read-only research. Never launch or focus a browser as fallback."""
