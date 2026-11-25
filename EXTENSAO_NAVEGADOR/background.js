@@ -1,3 +1,4 @@
+importScripts("background_research.js");
 const BRIDGE_URL = "http://127.0.0.1:9876";
 let pollingActive = false;
 
@@ -157,6 +158,7 @@ function domInspectorAndActuator(payload) {
 
 async function handleCommand(cmd) {
   try {
+    if (cmd.action === "RESEARCH_BACKGROUND") return await runBackgroundResearch(cmd, chrome);
     if (cmd.action === "PING") {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       return { ok: true, active_url: tab ? tab.url : "", active_title: tab ? tab.title : "" };
@@ -250,24 +252,29 @@ async function handleCommand(cmd) {
 async function startLongPoll() {
   if (pollingActive) return;
   pollingActive = true;
-  while (pollingActive) {
-    try {
-      const resp = await fetch(`${BRIDGE_URL}/poll`, { method: "GET" });
-      if (resp.ok) {
+  try {
+    const config = await chrome.storage.local.get("bridgeToken");
+    const token = config.bridgeToken;
+    if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) return;
+    const headers = {"X-Brainnet-Token":token};
+    while (pollingActive) {
+      const settings = await chrome.storage.local.get("bridgeToken");
+      if (settings.bridgeToken !== token) break;
+      try {
+        const resp = await fetch(BRIDGE_URL+"/poll", {method:"GET",headers,credentials:"omit",cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
+        if (resp.status === 403) break;
+        if (!resp.ok) throw Error("Bridge unavailable");
         const cmd = await resp.json();
-        if (cmd && cmd.id && cmd.action !== "IDLE") {
+        if (cmd && /^[0-9a-f]{10}$/.test(cmd.id || "") && typeof cmd.action === "string" && cmd.action !== "IDLE") {
           const result = await handleCommand(cmd);
-          await fetch(`${BRIDGE_URL}/result`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: cmd.id, result })
-          });
+          const body = JSON.stringify({id:cmd.id,result});
+          await fetch(BRIDGE_URL+"/result",{method:"POST",headers:{...headers,"Content-Type":"application/json"},credentials:"omit",redirect:"error",body,signal:AbortSignal.timeout(5000)});
         }
-      }
-    } catch (e) {
-      await new Promise(r => setTimeout(r, 1500));
+      } catch (_) { await new Promise(r=>setTimeout(r,2000)); }
     }
-  }
+  } finally { pollingActive = false; }
 }
-
+chrome.storage.onChanged.addListener((changes,area)=>{
+  if (area === "local" && changes.bridgeToken && !pollingActive) startLongPoll();
+});
 startLongPoll();
