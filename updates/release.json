@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "current_py_sha256": "b834eeca015660dccbecb26fcbf2d522ff1a14e9d7478530b7c6bb256ac7c7e6",
+  "files": [
+    {
+      "path": "BRAIN/inference_supervisor.py",
+      "before": "4d1e9335f8d8f6e59303678a2b0acf32e897039bbea689f412e97aebc8b4e045",
+      "after": "406d6332d9b09a8bf5644a4588af695c4d8ef78f83d60f86ce3ad5774f866c03"
+    },
+    {
+      "path": "BRAIN/test_inference_supervisor.py",
+      "before": "45db60f4649e975506826be5a3dba06451d0df28963c658f41a0819d0cba4465",
+      "after": "8f236ebd8ab4c496bdfe690bd31d39d511994380e467c8f695bd6748dbfbf69a"
+    },
+    {
+      "path": "iniciar/iniciar_aios.bat",
+      "before": "0419a5845549137af7e34353c26408229d13f587f833559d9acd773a990b99c6",
+      "after": "9b8dab5e5e9d0c2ec7eb2785347fd4032fce7ecabd840f4be50cfef3ee86cd00"
+    }
+  ]
+}

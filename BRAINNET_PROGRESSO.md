@@ -1,5 +1,9 @@
 # BRAINNET — registro de desenvolvimento
 
+## 25/11/2026 · Contrato P51–P60+
+
+A raiz operacional foi conferida no Windows. O supervisor deixou de encerrar processos de inferência pelo nome e passou a distinguir servidor externo disponível de geração comprovada. Primeiro commit publicado em revisão: `c6ff506`. O estado atual e a continuação estão em `BRAINNET_HANDOFF.md` e `BRAINNET_TEST_REPORT.md`.
+
 ## Indicadores de ponteiro e trabalho com a janela minimizada
 
 - A MasterShell oficial recebeu controle Mostrar/Ocultar cursores e botão Minimizar e continuar. Cada comando de ponteiro entra e sai do painel pelo seu próprio ID. As coordenadas exibidas são alvos informados ao executor, quando disponíveis.

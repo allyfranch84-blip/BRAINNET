@@ -1,0 +1,5 @@
+# Decisões de engenharia
+
+* **25/11/2026 · Inicialização.** A coincidência de nome e usuário não identifica o dono de um processo. Removemos o reset por varredura. A conexão a um Ollama já aberto verifica versão e catálogo antes de permitir uso. A disponibilidade recebe o estado AVAILABLE. READY continua ligado ao aquecimento do processo próprio.
+* **Publicação.** A base operacional continha modificações locais prévias. Cada commit usa caminhos explícitos. As versões históricas do instalador continuam recuperáveis por commit. Nenhum banco, configuração privada, modelo ou log pessoal pertence à atualização.
+* **Compatibilidade do canal.** Preservamos o script histórico P51.1 para clientes antigos. O novo sincronizador apenas calcula seu hash. Os arquivos novos vêm do mesmo commit aprovado. Um conflito em qualquer destino bloqueia a aplicação inteira. Após interrupção abrupta, conferir backups e arquivo de lock manualmente. As salvaguardas comparam os arquivos antes de cada troca e antes do rollback; uma edição externa ainda pode ocorrer no intervalo entre a comparação e a troca no sistema de arquivos.
