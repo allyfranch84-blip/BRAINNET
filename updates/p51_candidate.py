@@ -266,11 +266,12 @@ import {useChatArchive,ChatArchiveMenu,MicControl,LiveTask} from "./shell/ChatWo
     p=once(p,'<div>{m.text}</div>','<RichText text={m.text} kernel={kernel} onNote={title=>onSend("/nota ler "+title)}/>')
     p=once(p,'{m.duration && <span>• {m.duration}s</span>}','{Number.isFinite(m.durationMs) && <span>• {Math.round(m.durationMs)} ms · GUI↔kernel</span>}{m.resultStatus && <span>{m.resultStatus}</span>}')
     p=once(p,"new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })","m.timestamp ? new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''")
-    p=once(p,'        <div ref={endRef} />','''        {pending && <div className="bn-live-message"><LiveTask pending={pending} events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]}/><ReasoningPanel events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]}/>{streamByTask[currentTaskId]?.content&&<RichText text={streamByTask[currentTaskId].content} kernel={kernel}/>}</div>}
+    p=once(p,'        <div ref={endRef} />','''        {pending && <div className="bn-live-message"><ReasoningPanel events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]}/>{streamByTask[currentTaskId]?.content&&<RichText text={streamByTask[currentTaskId].content} kernel={kernel}/>}</div>}
         <div ref={endRef} />''')
     p=once(p,'[messages, pending]);','[messages, pending, streamByTask[currentTaskId]?.content]);')
     a1=p.index('      <VoiceReview draft={voiceDraft');b1=p.index('      <form onSubmit={submit}',a1)
     p=p[:a1]+'''      <div className="bn-chat-composer">
+      <LiveTask pending={pending} events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]}/>
       <VoiceReview draft={voiceDraft ?? null} setDraft={setVoiceDraft} onSend={onSend} pending={pending} status={voiceStatus}/>
 '''+p[b1:]
     p=once(p,'className="mt-3 flex items-center gap-2 rounded-full py-1.5 pl-5 pr-1.5"','className="bn-main-form"')
@@ -282,7 +283,10 @@ import {useChatArchive,ChatArchiveMenu,MicControl,LiveTask} from "./shell/ChatWo
         </div>
 '''+p[a1:]
     p=once(p,'      </form>\n    </Bubble>','      </form>\n      </div>\n    </Bubble>')
-    # No animated hover scaling in scrollable messages.
+    # No animated hover scaling or layout transitions in scrollable messages.
+    p=once(p,'<motion.div key={m.id} layout initial={{ opacity: 0, y: 16, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }}','<motion.div key={m.id} initial={false}')
+    p=once(p,'<motion.div key="typing" layout initial=', '<motion.div key="typing" initial=')
+    p=once(p,'behavior: "smooth", block: "end"','behavior: "auto", block: "end"')
     p=once(p,'whileHover={{ scale: 1.025, y: -2 }}','')
     s=s[:a]+p+s[b:]
     s=once(s,'  const [voiceDraft, setVoiceDraft] = useState(null);','''  const [voiceDraft, setVoiceDraft] = useState(null);
@@ -291,7 +295,7 @@ import {useChatArchive,ChatArchiveMenu,MicControl,LiveTask} from "./shell/ChatWo
     s=once(s,'  const executionRef = useRef({ id: 0, processing: false, stopping: false });','''  const executionRef = useRef({ id: 0, processing: false, stopping: false });
   const makeWelcome=useCallback(()=>({id:crypto.randomUUID(),role:"ai",text:"BRAINNET pronta.",timestamp:Date.now()}),[]);
   const archive=useChatArchive(kernel,messages,setMessages,pending,executionRef,makeWelcome);''')
-    s=once(s,'voiceStatus, voiceOn, toggleVoice','voiceStatus, voiceOn, toggleVoice, voiceMode, setVoiceMode, archive') if s.count('voiceStatus, voiceOn, toggleVoice')==1 else s
+    # The chat context is supplied by the existing provider below.
     # Context provider has a distinct anchor.
     a1='lite: lite || widgetMode, stopExecution, isStopping, voiceDraft, setVoiceDraft, voiceStatus, voiceOn, toggleVoice'
     if a1+', voiceMode' not in s:s=once(s,a1,a1+', voiceMode, setVoiceMode, archive')
@@ -312,6 +316,43 @@ def patch_notes(s):
     s=once(s,'<MarkdownPreview body={body} links={note.links} onOpen={open}/>','<article className="bn-preview"><RichText text={body} kernel={kernel} onNote={name=>{const link=note.links.find(l=>l.title.toLowerCase()===name.toLowerCase());if(link?.id)open(link.id);else setStatus("Nota referenciada não encontrada.");}}/></article>')
     return s
 
+TESTS = r'''
+import pytest
+import workspace_chat_archive as archive
+
+@pytest.fixture(autouse=True)
+def isolated_db(monkeypatch,tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA",str(tmp_path))
+
+def test_roundtrip_and_isolation():
+    a=[{"id":"a","role":"user","text":"Olá","timestamp":1},{"id":"b","role":"ai","text":"Olá 1","durationMs":123}]
+    assert archive.save("chat_a",a)["ok"]
+    assert archive.save("chat_b",[{"role":"user","text":"Outro"}])["ok"]
+    assert archive.load("chat_a")==a
+    assert archive.load("chat_b")[0]["text"]=="Outro"
+    assert len(archive.listing())==2
+    assert archive.load("new_chat")==[]
+
+def test_update_without_duplicate_chat():
+    archive.save("chat",[{"role":"user","text":"primeiro"}])
+    archive.save("chat",[{"role":"user","text":"primeiro"},{"role":"ai","text":"segundo"}])
+    assert len(archive.listing())==1
+    assert len(archive.load("chat"))==2
+
+def test_validation_preserves_saved_chat():
+    archive.save("valid",[{"role":"user","text":"original"}])
+    with pytest.raises(ValueError):
+        archive.save("valid",[{"role":"system","text":"invalid"}])
+    assert archive.load("valid")[0]["text"]=="original"
+    with pytest.raises(ValueError):
+        archive.load("../invalid")
+
+def test_context_is_bounded():
+    rows=[{"role":"user","text":"x"*4000} for _ in range(130)]
+    assert len(archive.history(rows))==120
+    assert len(archive.history(rows)[0]["text"])==3000
+'''
+
 def main():
     p=argparse.ArgumentParser();p.add_argument("--root",default=r"A:\BRAINNET");p.add_argument("--apply",action="store_true");args=p.parse_args()
     root=Path(args.root).resolve();brain=root/"BRAIN";project=root/"INTERFACE DE USUARIO/BRAINDET IU/project";comp=project/"src/components";shell=comp/"shell"
@@ -319,10 +360,10 @@ def main():
     read=lambda x:x.read_text(encoding="utf-8-sig")
     if not (brain/"test_workspace_p49.py").is_file():raise SystemExit("Instale P49 antes de P51.1.")
     if 'import "./shell/p51.css";' in read(master):
-        if all(x.is_file() for x in (brain/"workspace_chat_archive.py",shell/"RichText.jsx",shell/"ChatWorkspace.jsx",shell/"p51.css")):
+        if all(x.is_file() for x in (brain/"workspace_chat_archive.py",shell/"RichText.jsx",shell/"ChatWorkspace.jsx",shell/"p51.css",brain/"test_workspace_p51.py")):
             print("P51.1 já instalada. Execute os testes e o build.");return
         raise SystemExit("P51.1 incompleta; restaure backup.")
-    files={kernel:patch_kernel(read(kernel)),master:patch_shell(read(master)),notes:patch_notes(read(notes)),brain/"workspace_chat_archive.py":ARCHIVE,shell/"RichText.jsx":RICH,shell/"ChatWorkspace.jsx":CHAT,shell/"p51.css":CSS}
+    files={kernel:patch_kernel(read(kernel)),master:patch_shell(read(master)),notes:patch_notes(read(notes)),brain/"workspace_chat_archive.py":ARCHIVE,shell/"RichText.jsx":RICH,shell/"ChatWorkspace.jsx":CHAT,shell/"p51.css":CSS,brain/"test_workspace_p51.py":TESTS}
     old={x:x.read_bytes() if x.exists() else None for x in files}
     for x,c in files.items():
         if x.suffix==".py":compile(c,str(x),"exec")
@@ -346,7 +387,7 @@ def main():
             if tmp.exists():raise RuntimeError("Temporário existente: "+str(tmp))
             tmp.write_bytes(c.encode("utf-8"));tmp.replace(x);written.append(x)
         python=root/"VENV/Scripts/python.exe"
-        subprocess.run([str(python),"-B","-m","pytest","-p","no:cacheprovider","-q","test_workspace_p47.py","test_workspace_p48.py","test_workspace_p49.py"],cwd=brain,check=True)
+        subprocess.run([str(python),"-B","-m","pytest","-p","no:cacheprovider","-q","test_workspace_p47.py","test_workspace_p48.py","test_workspace_p49.py","test_workspace_p51.py"],cwd=brain,check=True)
         subprocess.run(["npm.cmd","run","build"],cwd=project,check=True)
     except BaseException:
         for x in reversed(written):
