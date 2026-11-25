@@ -34,38 +34,41 @@ def main():
     from browser_bridge import BrowserDeepBridge
     with tempfile.TemporaryDirectory(prefix="bn-web-probe-") as directory:
         bridge = BrowserDeepBridge(None, None, None, db_path=str(Path(directory) / "probe.sqlite3"))
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline and not bridge.extension_connected:
-            time.sleep(.25)
-        if not bridge.extension_connected:
-            print("BLOCKED: authenticated extension heartbeat not observed")
-            return 2
-        focus = win32gui.GetForegroundWindow()
-        cursor = win32gui.GetCursorPos()
-        focus_stable = True
-        cursor_stable = True
-        start = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(bridge.research_background, "Python sqlite3 official documentation")
-            while not future.done():
-                focus_stable &= win32gui.GetForegroundWindow() == focus
-                cursor_stable &= win32gui.GetCursorPos() == cursor
-                time.sleep(.05)
-            result = future.result()
-        focus_stable &= win32gui.GetForegroundWindow() == focus
-        cursor_stable &= win32gui.GetCursorPos() == cursor
-        report = {
-            "elapsed_ms": round((time.perf_counter()-start)*1000),
-            "result": result,
-            "foreground_unchanged_at_samples": focus_stable,
-            "cursor_unchanged_at_samples": cursor_stable,
-            "sampling_ms_approx": 50,
-        }
-        passed = (result.get("ok") is True and result.get("browser_active_tab_unchanged") is True
-                  and result.get("cleanup") == "OWNED_TAB_REMOVED" and focus_stable and cursor_stable)
-        report["classification"] = "PASS_REAL" if passed else "INCONCLUSIVE_OR_FAILED"
-        print(json.dumps(report, ensure_ascii=True, indent=2))
-        return 0 if passed else 1
+        try:
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline and not bridge.extension_connected:
+                time.sleep(.25)
+            if not bridge.extension_connected:
+                print("BLOCKED: authenticated extension heartbeat not observed")
+                return 2
+            focus = win32gui.GetForegroundWindow()
+            cursor = win32gui.GetCursorPos()
+            focus_stable = True
+            cursor_stable = True
+            start = time.perf_counter()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(bridge.research_background, "Python sqlite3 official documentation")
+                while not future.done():
+                    focus_stable &= win32gui.GetForegroundWindow() == focus
+                    cursor_stable &= win32gui.GetCursorPos() == cursor
+                    time.sleep(.05)
+                result = future.result()
+            focus_stable &= win32gui.GetForegroundWindow() == focus
+            cursor_stable &= win32gui.GetCursorPos() == cursor
+            report = {
+                "elapsed_ms": round((time.perf_counter()-start)*1000),
+                "result": result,
+                "foreground_unchanged_at_samples": focus_stable,
+                "cursor_unchanged_at_samples": cursor_stable,
+                "sampling_ms_approx": 50,
+            }
+            passed = (result.get("ok") is True and result.get("browser_active_tab_unchanged") is True
+                      and result.get("cleanup") == "OWNED_TAB_REMOVED" and focus_stable and cursor_stable)
+            report["classification"] = "PASS_REAL" if passed else "INCONCLUSIVE_OR_FAILED"
+            print(json.dumps(report, ensure_ascii=True, indent=2))
+            return 0 if passed else 1
+        finally:
+            bridge.close()
 
 
 if __name__ == "__main__":
