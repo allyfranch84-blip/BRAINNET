@@ -2308,8 +2308,8 @@ class BrainnetBridge:
             model = os.getenv('BRAINNET_MOTOR_MODEL', MODELO_PARSER)
             operation = budget.begin_inference(estimated_tokens=512)
             try:
-                budget.record_inference('ollama', model, 'INFERENCE_RUNNING')
                 supervisor=getattr(self._kernel,'inference_supervisor',None)
+                budget.record_inference(supervisor.kind if supervisor is not None else 'ollama', model, 'INFERENCE_RUNNING')
                 backend = supervisor.backend(model) if supervisor is not None else HTTPInferenceBackend(OLLAMA_GENERATE_URL.removesuffix('/api/generate'), model, 'ollama')
                 context_data={'open_apps':sorted({w['app'] for w in snapshot.get('windows',[]) if not w['owned']})[:24],
                               'selected_app':ui_window.get('app') if ui_window else None}
@@ -2324,8 +2324,11 @@ class BrainnetBridge:
                     raise ValueError('truncated motor plan')
                 plan = parse_response(result.text)
             except Exception as exc:
+                supervisor=getattr(self._kernel,'inference_supervisor',None)
+                if supervisor is not None:
+                    supervisor.report_failure(exc)
                 budget.finish_inference(operation, confirmed=False)
-                budget.record_inference('ollama', model, 'INFERENCE_FAILED')
+                budget.record_inference(supervisor.kind if supervisor is not None else 'ollama', model, 'INFERENCE_FAILED')
                 budget.check_active()
                 logger.warning('[MOTOR] endpoint=%s model=%s error=%s', OLLAMA_GENERATE_URL, model, exc)
                 # Keep the previously verified capability available without inference.
@@ -2339,7 +2342,7 @@ class BrainnetBridge:
             else:
                 budget.finish_inference(operation, reported_tokens=result.output_tokens)
                 budget.check_active()
-                budget.record_inference('ollama', model, 'INFERENCE_FINISHED')
+                budget.record_inference(supervisor.kind if supervisor is not None else 'ollama', model, 'INFERENCE_FINISHED')
         source_label = {'SEMANTIC_MODEL':'modelo semântico', 'VERIFIED_SESSION_CACHE':'memória da sessão',
                         'BUILTIN_VERIFIED_CAPABILITY':'capacidade básica local'}[source]
         logger.info('[MOTOR_PLAN] task_id=%s source=%s steps=%s', budget.task_id, source, plan['steps'])
