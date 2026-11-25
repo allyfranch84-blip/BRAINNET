@@ -2,6 +2,7 @@
 import os
 import json
 import shutil
+import stat
 import subprocess
 import threading
 import time
@@ -12,31 +13,6 @@ from urllib.parse import urlsplit
 import psutil
 
 LOG=logging.getLogger(__name__)
-NAMES=frozenset(('ollama.exe','ollama app.exe','ollama_llama_server.exe','llama-server.exe'))
-
-def reset_inference_processes():
-    """Explicit launcher reset only. Never terminate Python, Node or other apps."""
-    targets=[]
-    for proc in psutil.process_iter(['name','username']):
-        try:
-            if (proc.info.get('name') or '').casefold() in NAMES and proc.info.get('username')==psutil.Process().username():
-                targets.append(proc)
-        except (psutil.NoSuchProcess,psutil.AccessDenied):
-            continue
-    for proc in targets:
-        try:
-            LOG.warning('inference reset pid=%s name=%s',proc.pid,proc.name())
-            proc.terminate()
-        except psutil.NoSuchProcess:
-            pass
-    _,alive=psutil.wait_procs(targets,timeout=4)
-    for proc in alive:
-        try: proc.kill()
-        except psutil.NoSuchProcess: pass
-    _,alive=psutil.wait_procs(alive,timeout=3)
-    if alive:
-        raise RuntimeError('Inference processes did not exit')
-    return len(targets)
 
 class InferenceSupervisor:
     def __init__(self):
@@ -53,7 +29,7 @@ class InferenceSupervisor:
         self.error=None
         self.attempts=0
         self.worker=None
-        self.reset_done=False
+        self.external=False
         self.recovery_requested=threading.Event()
 
     def _json(self,path,data=None,timeout=3):
@@ -65,6 +41,72 @@ class InferenceSupervisor:
     def _port_free(self):
         port=urlsplit(self.endpoint).port
         return not any(c.status=='LISTEN' and c.laddr and c.laddr.port==port for c in psutil.net_connections(kind='tcp'))
+
+    def _ollama_catalog(self):
+        version = self._json('/api/version').get('version')
+        rows = self._json('/api/tags').get('models')
+        if not isinstance(version, str) or not version.strip() or not isinstance(rows, list):
+            raise ValueError('Resposta incompatível com a API Ollama')
+        names = [row['name'] for row in rows if isinstance(row, dict) and isinstance(row.get('name'), str)]
+        if len(names) != len(rows):
+            raise ValueError('Catálogo Ollama inválido')
+        return version, names
+
+    def _attach_ollama(self):
+        _, names = self._ollama_catalog()
+        if self.model not in names and self.model + ':latest' not in names:
+            raise RuntimeError('Configured local model not installed')
+        self.state = 'AVAILABLE'
+        self.error = None
+
+    def preflight(self, *, probe=False):
+        """On-demand observation. Only an explicit probe may load the selected model."""
+        if self.kind != 'ollama':
+            raise ValueError('O preflight de catálogo requer o backend ollama')
+        expected = Path('A:/OLLAMA_MODELS')
+        default = Path.home() / '.ollama' / 'models'
+        store = Path(os.environ.get('OLLAMA_MODELS') or default)
+        report = {'endpoint': self.endpoint, 'selected_model': self.model, 'version': None,
+                  'models': None, 'selected_installed': None, 'resident': None,
+                  'inference': 'NOT_TESTED', 'vulkan': 'UNVERIFIED', 'errors': {},
+                  'expected_store_exists': expected.is_dir(), 'disk_free_bytes': {}}
+        try:
+            report['junction_to_expected'] = (getattr(default.lstat(), 'st_reparse_tag', None) ==
+                stat.IO_REPARSE_TAG_MOUNT_POINT and default.samefile(expected))
+            report['client_store_matches_expected'] = store.samefile(expected)
+        except OSError as exc:
+            report['errors']['storage'] = type(exc).__name__
+        for drive in ('A:/', 'C:/'):
+            try:
+                report['disk_free_bytes'][drive] = shutil.disk_usage(drive).free
+            except OSError as exc:
+                report['errors'][drive] = type(exc).__name__
+        try:
+            report['version'], names = self._ollama_catalog()
+            report['models'] = names
+            report['selected_installed'] = self.model in names or self.model + ':latest' in names
+        except (OSError, ValueError, AttributeError) as exc:
+            report['errors']['server'] = str(exc)
+            return report
+        try:
+            rows = self._json('/api/ps')['models']
+            if not isinstance(rows, list):
+                raise ValueError('Resposta /api/ps inválida')
+            report['resident'] = [{k: row.get(k) for k in ('name','size','size_vram','expires_at')} for row in rows]
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            report['errors']['resident'] = str(exc)
+        if probe and report['selected_installed']:
+            started = time.monotonic()
+            try:
+                reply = self._json('/api/generate', {'model': self.model, 'prompt': 'Responda OK',
+                    'stream': False, 'options': {'num_ctx': 1024, 'num_predict': 8, 'temperature': 0}}, timeout=60)
+                report['inference'] = 'PASS_REAL' if reply.get('done') is True and str(reply.get('response') or '').strip() else 'INCONCLUSIVE'
+                report['usage'] = {k: reply.get(k) for k in ('load_duration','eval_count','eval_duration','prompt_eval_count')}
+            except (OSError, ValueError, AttributeError) as exc:
+                report['inference'] = 'FAIL'
+                report['errors']['generation'] = str(exc)
+            report['elapsed_ms'] = round((time.monotonic() - started) * 1000, 2)
+        return report
 
     def _spawn(self):
         if not self._port_free():
@@ -162,9 +204,16 @@ class InferenceSupervisor:
                 return False
             self.state='STARTING'
             try:
-                if reset and not self.reset_done:
-                    self.reset_done=True
-                    reset_inference_processes()
+                # The legacy reset flag never grants ownership of other sessions.
+                if self.proc is not None or self.manager is not None:
+                    if self._alive() and not reset and not self.recovery_requested.is_set():
+                        self.state = 'READY'
+                        return True
+                    self._stop_owned()
+                if self.kind == 'ollama' and (self.external or not self._port_free()):
+                    self.external = True
+                    self._attach_ollama()
+                    return True
                 self._spawn()
                 self._warmup()
                 self.recovery_requested.clear()
@@ -182,6 +231,13 @@ class InferenceSupervisor:
     def monitor(self):
         while not self.stop_event.wait(5):
             with self.lock:
+                if self.external:
+                    if self.state == 'UNAVAILABLE':
+                        try:
+                            self._attach_ollama()
+                        except (OSError, ValueError, RuntimeError, AttributeError) as exc:
+                            self.error = str(exc)
+                    continue
                 if self._alive() and not self.recovery_requested.is_set():
                     # Do not restart a live server merely because it is busy.
                     continue
@@ -208,6 +264,8 @@ class InferenceSupervisor:
 
     def backend(self,model):
         from inference_backend import HTTPInferenceBackend,ModelUnavailable,BackendUnavailable
+        if self.external and self.state=='AVAILABLE':
+            return HTTPInferenceBackend(self.endpoint,model,self.kind)
         if self.state!='READY' or not self._alive():
             raise BackendUnavailable(self.error or self.state)
         if self.kind=='llamacpp' and model!=self.model:
@@ -221,18 +279,20 @@ class InferenceSupervisor:
         if not isinstance(exc,(BackendUnavailable,ProcessFailed)):
             return
         with self.lock:
-            if self.state!='READY':
+            if self.state not in ('READY', 'AVAILABLE'):
                 return
             try:
                 self._json('/api/version' if self.kind=='ollama' else '/health',timeout=3)
             except Exception:
                 self.error=f'{type(exc).__name__}: {exc}'
                 self.state='UNAVAILABLE'
-                self.recovery_requested.set()
+                if not self.external:
+                    self.recovery_requested.set()
 
     def status(self):
         return {'backend':self.kind,'endpoint':self.endpoint,'model':self.model,
                 'state':self.state if self._alive() else 'STOPPED' if self.state=='READY' else self.state,
+                'ownership':'external' if self.external else ('owned' if self.proc or self.manager else 'none'),
                 'error':self.error,'restarts':self.attempts}
 
     def stop(self):
@@ -240,3 +300,13 @@ class InferenceSupervisor:
         with self.lock:
             self._stop_owned()
             self.state='STOPPED'
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Pré-voo do Ollama na porta oficial')
+    parser.add_argument('--probe', action='store_true', help='Testar geração curta com modelo já instalado')
+    args = parser.parse_args()
+    result = InferenceSupervisor().preflight(probe=args.probe)
+    print(json.dumps(result, ensure_ascii=True, indent=2))
+    raise SystemExit(0 if result['selected_installed'] and (not args.probe or result['inference'] == 'PASS_REAL') else 1)

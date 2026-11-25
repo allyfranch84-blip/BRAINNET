@@ -40,9 +40,9 @@ rem Kernel owns inference startup, cleanup, warmup and recovery. No second super
 set "OLLAMA_HOST=127.0.0.1:11435"
 if not defined BRAINNET_INFERENCE_BACKEND set "BRAINNET_INFERENCE_BACKEND=ollama"
 set "BRAINNET_MANAGE_INFERENCE=1"
-set "BRAINNET_RESET_INFERENCE=1"
+set "BRAINNET_RESET_INFERENCE=0"
 echo Backend: %BRAINNET_INFERENCE_BACKEND%
-echo O Kernel reiniciara os processos locais de inferencia e testara a geracao.
+echo O Kernel consultara o Ollama existente ou iniciara um backend proprio em porta livre.
 echo Iniciando Kernel de "%ROOT%\BRAIN"...
 pushd "%ROOT%\BRAIN"
 "%PYTHON%" "%ROOT%\BRAIN\BRAINNET.py"
