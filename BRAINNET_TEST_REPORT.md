@@ -19,3 +19,10 @@ O sincronizador passou em 10 testes em 2,15 s, com arquivos temporários, um rep
 | Protocolo autenticado | PASS_UNIT | 4 casos Python, Linux isolado, blobs remotos iguais |
 | Pesquisa de fundo | PASS_UNIT | 5 casos Node, Chromium simulado, blobs remotos iguais |
 | Extensão/ponte e foco Windows | NOT_TESTED | Probe opt-in publicado; ver BRAINNET_P55_REVIEW.md |
+
+## P55.2 — transporte e prazos
+| Verificação | Classe | Evidência |
+|---|---|---|
+| Protocolo e transporte | PASS_UNIT / PASS_INTEGRATION_LOOPBACK | 14 testes Python, 9 subtestes, 1,17 s; 10 casos com HTTP real local |
+| Pesquisa e validade de comando | PASS_UNIT | 6 casos Node, API Chromium simulada |
+| Integração do kernel / extensão real | NOT_TESTED | Probe opt-in atualizado; ver BRAINNET_P55_2_REVIEW.md |
