@@ -36,11 +36,13 @@ echo Aguardando a interface responder...
 powershell.exe -NoProfile -Command "$end=(Get-Date).AddSeconds(30); do { try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:%BRAINNET_MINIMAL_GUI_PORT%/' -TimeoutSec 2; if ($r.StatusCode -eq 200) { exit 0 } } catch {}; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $end); exit 1"
 if errorlevel 1 goto :vite_failed
 
-rem Keep a running Ollama intact. Start only when the configured local endpoint is absent.
-if not defined OLLAMA_HOST set "OLLAMA_HOST=127.0.0.1:11435"
-echo Verificando Ollama em %OLLAMA_HOST%...
-powershell.exe -NoProfile -Command "$base=$env:OLLAMA_HOST; if ($base -notmatch '^https?://') {$base='http://'+$base}; $base=$base.TrimEnd('/'); try {$u=[uri]$base; if (-not $u.IsLoopback -or $u.Scheme -ne 'http') {throw 'Endpoint nao local'}} catch {Write-Host 'Ollama: endpoint invalido'; exit 1}; try {$null=Invoke-RestMethod ($base+'/api/version') -TimeoutSec 2; Write-Host 'Ollama: servidor conectado'; exit 0} catch {}; $cmd=Get-Command ollama.exe -ErrorAction SilentlyContinue; if (-not $cmd) {Write-Host 'Ollama: executavel ausente'; exit 1}; if (Get-Process ollama -ErrorAction SilentlyContinue) {Write-Host 'Ollama ja em execucao, mas endpoint configurado nao responde. Verifique a porta; nenhum processo sera encerrado.'; exit 1}; Start-Process -FilePath $cmd.Source -ArgumentList 'serve' -WindowStyle Minimized; $end=(Get-Date).AddSeconds(12); do {try {$null=Invoke-RestMethod ($base+'/api/version') -TimeoutSec 2; Write-Host 'Ollama: servidor conectado'; exit 0} catch {}; Start-Sleep -Milliseconds 500} while ((Get-Date) -lt $end); Write-Host 'Ollama nao respondeu'; exit 1"
-if errorlevel 1 echo AVISO: inferencia indisponivel. Movimento basico e comandos locais continuam ativos.
+rem Kernel owns inference startup, cleanup, warmup and recovery. No second supervisor.
+set "OLLAMA_HOST=127.0.0.1:11435"
+if not defined BRAINNET_INFERENCE_BACKEND set "BRAINNET_INFERENCE_BACKEND=ollama"
+set "BRAINNET_MANAGE_INFERENCE=1"
+set "BRAINNET_RESET_INFERENCE=1"
+echo Backend: %BRAINNET_INFERENCE_BACKEND%
+echo O Kernel reiniciara os processos locais de inferencia e testara a geracao.
 echo Iniciando Kernel de "%ROOT%\BRAIN"...
 pushd "%ROOT%\BRAIN"
 "%PYTHON%" "%ROOT%\BRAIN\BRAINNET.py"
