@@ -11,6 +11,8 @@ from __future__ import annotations
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
+import os
+from browser_bridge_protocol import authorized, valid_token, read_result
 from pathlib import Path
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -57,6 +59,7 @@ class BrowserDeepBridge:
         self.effector = effector
         self.db_path = str(BRAIN_DIR / db_path)
         self.port = port
+        self._bridge_token = os.environ.get('BRAINNET_BROWSER_TOKEN', '')
 
         self._cmd_queue: queue.Queue[Dict[str, Any]] = queue.Queue()
         self._pending_results: Dict[str, queue.Queue[Dict[str, Any]]] = {}
@@ -114,6 +117,9 @@ class BrowserDeepBridge:
 
     def _start_server(self) -> None:
         bridge_ref = self
+        if not valid_token(self._bridge_token):
+            logger.warning("[DOM BRIDGE] Configure BRAINNET_BROWSER_TOKEN; extensão indisponível.")
+            return
 
         class BridgeHandler(BaseHTTPRequestHandler):
             def log_message(self, format: str, *args: Any) -> None:
@@ -124,36 +130,60 @@ class BrowserDeepBridge:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(raw)))
-                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
                 self.end_headers()
                 try:
                     self.wfile.write(raw)
                 except (ConnectionAbortedError, BrokenPipeError):
                     pass
 
+            def _authenticate(self) -> bool:
+                values = self.headers.get_all("X-Brainnet-Token", [])
+                if len(values) != 1 or not authorized(bridge_ref._bridge_token, values[0]):
+                    self._send_json({"ok": False, "error": "Unauthorized"}, 403)
+                    return False
+                return True
+
             def do_GET(self) -> None:
-                if self.path.startswith("/poll"):
+                if not self._authenticate():
+                    return
+                if self.path == "/poll":
                     bridge_ref._last_heartbeat = time.time()
                     try:
                         cmd = bridge_ref._next_active_command(timeout=8.0)
                         self._send_json(cmd)
                     except queue.Empty:
                         self._send_json({"id": None, "action": "IDLE"})
-                elif self.path.startswith("/heartbeat"):
+                elif self.path == "/heartbeat":
                     bridge_ref._last_heartbeat = time.time()
                     self._send_json({"ok": True, "status": "alive"})
                 else:
-                    self._send_json({"ok": True, "service": "BRAINNET_DOM_BRIDGE"})
+                    self._send_json({"ok": False, "error": "Unknown route"}, 404)
 
             def do_POST(self) -> None:
-                if self.path.startswith("/result"):
-                    bridge_ref._last_heartbeat = time.time()
-                    length = int(self.headers.get("Content-Length", "0"))
-                    body = json.loads(self.rfile.read(length).decode("utf-8"))
-                    cmd_id = body.get("id")
-                    if cmd_id and cmd_id in bridge_ref._pending_results:
-                        bridge_ref._pending_results[cmd_id].put(body.get("result", {}))
-                    self._send_json({"ok": True})
+                if not self._authenticate():
+                    return
+                if self.path != "/result":
+                    self._send_json({"ok": False, "error": "Unknown route"}, 404)
+                    return
+                self.connection.settimeout(5)
+                try:
+                    cmd_id, result = read_result(self.headers, self.rfile)
+                except (ValueError, OSError):
+                    self._send_json({"ok": False, "error": "Invalid result"}, 400)
+                    return
+                pending = bridge_ref._pending_results.get(cmd_id)
+                if pending is None:
+                    self._send_json({"ok": False, "error": "Expired or unknown command"}, 409)
+                    return
+                try:
+                    pending.put_nowait(result)
+                except queue.Full:
+                    self._send_json({"ok": False, "error": "Duplicate result"}, 409)
+                    return
+                bridge_ref._last_heartbeat = time.time()
+                self._send_json({"ok": True})
 
         def _serve() -> None:
             try:
@@ -181,13 +211,15 @@ class BrowserDeepBridge:
             logger.warning("[DOM BRIDGE]: Comando expirado descartado antes da execucao")
 
     def send_command(self, action: str, timeout: float = 10.0, **kwargs: Any) -> Dict[str, Any]:
+        if not valid_token(getattr(self, "_bridge_token", "")):
+            return {"ok": False, "error": "Autenticação da extensão não configurada."}
         if action in ("OPEN_TAB_AND_WAIT", "NAVIGATE_ACTIVE_TAB"):
             kwargs.setdefault("extract_options", {"preferred_tags": ["main", "article", "p", "h1"], "max_chars": 3000})
         cmd_id = uuid.uuid4().hex[:10]
-        res_q: queue.Queue[Dict[str, Any]] = queue.Queue()
+        res_q: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=1)
         self._pending_results[cmd_id] = res_q
 
-        payload = {"id": cmd_id, "action": action, **kwargs}
+        payload = {**kwargs, "id": cmd_id, "action": action}
         self._cmd_queue.put(payload)
 
         try:
@@ -196,6 +228,17 @@ class BrowserDeepBridge:
             return {"ok": False, "error": "Extensão do navegador desconectada."}
         finally:
             self._pending_results.pop(cmd_id, None)
+
+    def research_background(self, query: str) -> Dict[str, Any]:
+        """Explicit read-only research. Never launch or focus a browser as fallback."""
+        if not isinstance(query, str) or not 1 <= len(query.strip()) <= 500:
+            return {"ok": False, "error": "Consulta inválida"}
+        if not self.extension_connected:
+            return {"ok": False, "error": "Extensão autenticada indisponível"}
+        result = self.send_command("RESEARCH_BACKGROUND", query=query.strip(), timeout=20.0)
+        if result.get("ok") is True and not isinstance(result.get("links"), list):
+            return {"ok": False, "error": "Resposta de pesquisa inválida"}
+        return result
 
     def ensure_preferred_browser(self, initial_url: Optional[str] = None) -> str:
         ordem = ["thorium", "brave", "chrome"]
