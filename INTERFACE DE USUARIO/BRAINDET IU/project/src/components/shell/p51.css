@@ -1,0 +1,14 @@
+
+.bn-chat-composer{flex-shrink:0;min-width:0;border:1px solid var(--edge);border-radius:22px;background:var(--chip);padding:10px 12px;margin-top:10px}
+.bn-chat-composer form.bn-main-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:transparent!important;border:0!important;margin:0;padding:0!important}
+.bn-chat-composer .bn-main-form>input{flex:1 1 100%;min-height:40px;width:100%;user-select:text}
+.bn-chat-composer .bn-chat-tools{flex:1 1 auto;min-width:0;padding:0}
+.bn-chat-composer .bn-voice{margin-bottom:8px}
+.bn-chat-tools .bn-chat-pop{z-index:40;max-width:min(320px,80vw);max-height:55vh;overflow:auto;white-space:normal}
+.bn-mic-control{display:flex;align-items:center;gap:2px}.bn-mic-control button{display:flex;align-items:center;gap:5px}.bn-mic-control summary{display:flex;align-items:center}
+.bn-archive-menu{display:flex;flex-direction:column;gap:8px}.bn-archive-menu button{display:flex;align-items:center;gap:5px}.bn-archive-menu select{max-width:100%;width:100%}
+.bn-chat-composer select{max-width:140px}.bn-chat-composer .bn-archive-menu select{max-width:100%}
+.bn-live-task{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);padding:5px 0}.bn-live-dot{width:7px;height:7px;border-radius:100%;background:var(--cyan);flex-shrink:0}
+.bn-rich{white-space:normal;overflow-wrap:anywhere;min-width:0;width:100%;user-select:text;line-height:1.65}.bn-rich p{margin:.35em 0 .75em}.bn-rich h1,.bn-rich h2,.bn-rich h3{font-weight:600;margin:1em 0 .4em}.bn-rich h1{font-size:1.55em}.bn-rich h2{font-size:1.3em}.bn-rich h3{font-size:1.12em}.bn-rich ul,.bn-rich ol{padding-left:1.5em;margin:.5em 0}.bn-rich ul{list-style:disc}.bn-rich ol{list-style:decimal}.bn-rich a,.bn-rich .bn-link{color:var(--cyan);text-decoration:underline;cursor:pointer}.bn-rich pre{overflow:auto;background:var(--cell);border:1px solid var(--edge);padding:10px;border-radius:9px;white-space:pre}.bn-rich code{font-family:monospace}.bn-rich table{display:block;overflow:auto;border-collapse:collapse}.bn-rich th,.bn-rich td{border:1px solid var(--edge);padding:6px 10px}.bn-rich blockquote{border-left:3px solid var(--edge);padding-left:12px;color:var(--muted)}
+.bn-live-message{flex-shrink:0;max-width:90%;padding:10px 16px;border-radius:16px;background:var(--chip);border:1px solid var(--edge);overflow-wrap:anywhere}
+.bn-chat-messages>div{flex-shrink:0}.bn-chat-composer .bn-chat-tools>details{flex-shrink:0}

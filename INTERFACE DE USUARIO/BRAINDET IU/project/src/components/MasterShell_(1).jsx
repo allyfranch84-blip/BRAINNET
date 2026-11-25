@@ -30,6 +30,17 @@
 import React, { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 const TelemetryDashboard = lazy(() => import("./TelemetryDashboard"));
 import Hotbar from "./Hotbar";
+import {THEMES, THEME_NAMES, isLightTheme} from "./shell/themes";
+import {useShellSettings} from "./shell/useShellSettings";
+import ThemePicker from "./shell/ThemePicker";
+import "./shell/performance.css";
+import WorkspaceNotes from "./shell/WorkspaceNotes";
+import {WorkspaceSidebar, WorkspaceTabs, WorkspaceHome, CognitiveStatus, VoiceReview, WORKSPACE_LABELS} from "./shell/WorkspaceShell";
+import "./shell/workspace.css";
+import "./shell/p48.css";
+import "./shell/p51.css";
+import RichText from "./shell/RichText";
+import {useChatArchive,ChatArchiveMenu,MicControl,LiveTask} from "./shell/ChatWorkspace";
 import SemanticTrainer from "./SemanticTrainer";
 import VoiceToast from "./VoiceToast";
 import SendStopButton from "./SendStopButton";
@@ -58,24 +69,7 @@ const GLASS_FX = {
 };
 const ShellFxCtx = createContext({ lite: false });
 
-const THEMES = {
-  dark: {
-    "--glass": "rgba(18,16,28,.38)", "--cell": "rgba(30,26,44,.85)", "--edge": "rgba(255,255,255,.10)",
-    "--spec": "rgba(255,255,255,.22)", "--shadow": "rgba(0,0,0,.65)", "--glow": "rgba(140,230,255,.32)",
-    "--cyan": "#7ff0e0", "--violet": "#d29bff", "--warm": "#ffb27a", "--rose": "#ff8fc0", "--rim": "#7ff0e0",
-    "--text": "#f1f2ff", "--muted": "rgba(224,226,245,.56)", "--bubble-user": "rgba(210,155,255,.18)",
-    "--chip": "rgba(255,255,255,.06)", "--err": "#ff6f8e", "--bg-a": "#0d0d14", "--bg-b": "#020204",
-    "--smoke": "236,240,255", "--dots": "236,240,255",
-  },
-  light: {
-    "--glass": "rgba(255,255,255,.34)", "--cell": "rgba(255,255,255,.88)", "--edge": "rgba(255,255,255,.75)",
-    "--spec": "rgba(255,255,255,.95)", "--shadow": "rgba(50,56,70,.22)", "--glow": "rgba(60,230,140,.38)",
-    "--cyan": "#0b9d6a", "--violet": "#7a5ce0", "--warm": "#e0803a", "--rose": "#d6508e", "--rim": "#2fe07a",
-    "--text": "#14151b", "--muted": "rgba(20,21,27,.55)", "--bubble-user": "rgba(47,224,122,.18)",
-    "--chip": "rgba(20,21,27,.05)", "--err": "#d63a5a", "--bg-a": "#eceef0", "--bg-b": "#c3c6cd",
-    "--smoke": "14,14,20", "--dots": "20,22,34",
-  },
-};
+
 
 /* ── 2. Bridge: window.pywebview.api (com mock) ────────────────── */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -254,6 +248,15 @@ function LiveLine({ lines, every = 3400, className = "", style }) {
 /** Tipografia cinética: letras entram em mola, respiram (peso variável) e reagem ao mouse. */
 function Kinetic({ text, size = "clamp(56px,8.5vw,132px)", weight = 300, delay = 0, className = "" }) {
   const reduce = useReducedMotion();
+  const {lite} = useContext(ShellFxCtx);
+
+  if (lite || reduce) return (
+    <span className={className}
+          style={{fontFamily:DISPLAY, fontSize:size, fontWeight:weight}}>
+      {text}
+    </span>
+  );
+
   return (
     <span className={`inline-flex flex-wrap ${className}`} style={{ fontFamily: DISPLAY, fontSize: size, lineHeight: 0.95, letterSpacing: "-0.045em" }} aria-label={text}>
       {[...text].map((ch, i) => (ch === " "
@@ -414,6 +417,17 @@ function Atmosphere() {
 /* ── 6. Primitivos: Bolha, Orbe ────────────────────────────────── */
 const Bubble = React.forwardRef(function Bubble({ className = "", inner = "", style, tag, smoke = 0, morph = "a", delay = 0, children, ...rest }, ref) {
   const { lite } = useContext(ShellFxCtx);
+  if (lite) return (
+    <div ref={ref} className={`relative overflow-hidden ${className}`}
+         style={{background:"var(--glass)",
+                 border:"1px solid var(--edge)",
+                 borderRadius:18, ...style}}>
+      <div className={`relative h-full min-h-0 ${inner}`}>
+        {children}
+      </div>
+    </div>
+  );
+
   return (
     <motion.div ref={ref} {...rest} className={`relative overflow-hidden aios-morph-${morph} ${className}`}
       style={{ ...GLASS_FX, boxShadow: "inset 0 1px 0 var(--spec),inset 0 -34px 60px -44px var(--rim),0 30px 70px -30px var(--shadow)", animationDelay: `${-delay}s`, ...style }}>
@@ -724,9 +738,9 @@ function Home({ groups, messages, logs, theme, onToggleTheme, voice, onNavigate,
                 {/* HERO */}
                 <div className="flex flex-wrap items-end justify-between gap-6 pt-3">
                   <div>
-                    <div className="mb-1 text-[11px] tracking-[0.3em]" style={{ ...MONO, color: "var(--cyan)" }}>{greet(d.getHours()).toUpperCase()} · v7 · <Readout base={72.4} drift={4} digits={2} /></div>
+                    <div className="mb-1 text-[11px] tracking-[0.3em]" style={{ ...MONO, color: "var(--cyan)" }}>{greet(d.getHours()).toUpperCase()} · v7 · <span>Interface local</span></div>
                     <Kinetic text="AI OS" weight={200} />
-                    <LiveLine lines={["o que vamos fazer hoje?", "toque num bloco para abrir uma habilidade", "ou fale / digite na barra abaixo", "tudo aqui se move — passe o mouse para focar"]} className="mt-2 text-sm" style={{ ...MONO, color: "var(--muted)" }} />
+                    <LiveLine lines={["o que vamos fazer hoje?", "toque num bloco para abrir uma habilidade", "ou fale / digite na barra abaixo", "conhecimento, projetos e conversa"]} className="mt-2 text-sm" style={{ ...MONO, color: "var(--muted)" }} />
                   </div>
                   <div className="text-right">
                     <div className="tabular-nums" style={{ fontFamily: DISPLAY, fontWeight: 200, fontSize: "clamp(34px,4vw,60px)", letterSpacing: "-0.04em", lineHeight: 1 }}>{d.toLocaleTimeString("pt-BR", { hour12: false })}</div>
@@ -749,10 +763,10 @@ function Home({ groups, messages, logs, theme, onToggleTheme, voice, onNavigate,
                     <TileFoot title="Conversa" sub="toque para abrir em tela cheia" big />
                   </Tile>
 
-                  <Tile id="brain" span="lg" variant="glass" index={1} onClick={() => onNavigate("brain")} label="Abrir cérebro">
-                    <TileHead tag="cortex" icon="brain" />
-                    <div className="pointer-events-none absolute inset-x-6 top-8 bottom-16 grid place-items-center"><BrainCore activity={activity} className="max-h-full w-full" /></div>
-                    <div className="relative mt-auto"><TileFoot title="Cérebro" sub={`atividade ${(activity * 100).toFixed(0)}% · sinapses ${BRAIN.nodes.length}`} big /></div>
+                  <Tile id="notes" span="lg" variant="glass" index={1} onClick={() => onNavigate("notes")} label="Abrir notas">
+                    <TileHead tag="workspace // local" icon="file" />
+                    <div className="pointer-events-none absolute inset-x-6 top-8 bottom-16 grid place-items-center"><Icon name="file" className="w-24 h-24" style={{color:"var(--cyan)",opacity:.65}}/></div>
+                    <div className="relative mt-auto"><TileFoot title="Notas" sub="Conhecimento · Markdown · Links" big /></div>
                   </Tile>
 
                   <Tile id="voice" span="wide" variant="iris" index={2} onClick={voice.onToggle} label="Alternar comando por voz">
@@ -764,8 +778,8 @@ function Home({ groups, messages, logs, theme, onToggleTheme, voice, onNavigate,
                   </Tile>
 
                   <Tile id="theme" span="sm" variant="ink" index={3} onClick={onToggleTheme} label="Alternar tema">
-                    <TileHead tag="display" icon={theme === "dark" ? "moon" : "sun"} />
-                    <TileFoot title="Tema" sub={theme === "dark" ? "escuro" : "claro"} />
+                    <TileHead tag="display" icon={isLightTheme(theme) ? "sun" : "moon"} />
+                    <TileFoot title="Tema" sub={THEME_NAMES[theme]} />
                   </Tile>
 
                   <Tile id="kernel" span="sm" variant="glass" index={4} onClick={onToggleConsole} label="Alternar logs do kernel">
@@ -965,22 +979,6 @@ function Menu({ expanded, onToggle, view, onNavigate, skills, groups, voice, con
 }
 
 /* ── 11. Header, Tema, Chat ────────────────────────────────────── */
-function ThemeToggle({ theme, onToggle }) {
-  const light = theme === "light";
-  return (
-    <button type="button" role="switch" aria-checked={light} aria-label="Alternar modo claro/escuro" onClick={onToggle}
-      className="relative flex h-10 w-[84px] items-center rounded-full p-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]"
-      style={{ background: "var(--chip)", border: "1px solid var(--edge)", boxShadow: "inset 0 2px 6px var(--shadow)" }}>
-      <Icon name="moon" className="absolute left-3 h-4 w-4" style={{ color: "var(--muted)" }} />
-      <Icon name="sun" className="absolute right-3 h-4 w-4" style={{ color: "var(--muted)" }} />
-      <motion.span className="relative z-10 grid h-8 w-8 place-items-center rounded-full text-[#10101a]" animate={{ x: light ? 44 : 0, rotate: light ? 360 : 0 }} transition={JELLY}
-        style={{ background: "linear-gradient(145deg,var(--cyan),var(--violet),var(--warm))", boxShadow: "0 0 18px 1px var(--glow),inset 0 1px 0 rgba(255,255,255,.6)" }}>
-        <Icon name={light ? "sun" : "moon"} className="h-4 w-4" />
-      </motion.span>
-    </button>
-  );
-}
-
 function Header({ kernel, theme, onToggleTheme, bridge, title, trail, voiceOn, fullscreen, onToggleFullscreen, widgetMode, onToggleWidget }) {
   const reduce = useReducedMotion();
   return (
@@ -1015,7 +1013,7 @@ function Header({ kernel, theme, onToggleTheme, bridge, title, trail, voiceOn, f
         </AnimatePresence>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        <ThemePicker theme={theme} onToggle={onToggleTheme} />
         <motion.button type="button" aria-label={widgetMode ? "Sair do modo widget" : "Modo widget"} onClick={onToggleWidget}
           whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.88 }} transition={JELLY}
           className="grid h-10 w-10 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]"
@@ -1046,7 +1044,7 @@ function ReasoningPanel({ events, stream }) {
   if (!events?.length && !stream?.thinking) return null;
   const last = events?.[events.length - 1] || {};
   return <details className="mt-2 text-xs" style={{color:'var(--text)'}}>
-    <summary>PENSAMENTO PROFUNDO · etapas operacionais</summary>
+    <summary>Detalhes operacionais</summary>
     {stream?.thinking ? <><label><input type="checkbox" checked={showThinking} onChange={e => setShowThinking(e.target.checked)} /> Mostrar pensamento recebido</label>{showThinking && <p className="whitespace-pre-wrap">{stream.thinking}</p>}</> : <p>Conteúdo de pensamento do modelo: não disponível ou não confirmado.</p>}
     {(events || []).map((event, index) => <div key={`${event.timestamp}-${index}`}>
       <span>{new Date(event.timestamp * 1000).toLocaleTimeString('pt-BR')} · {event.kind} · {event.state}</span>
@@ -1061,7 +1059,8 @@ function ReasoningPanel({ events, stream }) {
 
 function ChatPanel({ messages, pending, onSend, kernel, effortMode, changeEffort, effortError, reasoningByTask, streamByTask, currentTaskId, conversationStatus }) {
   const [isDragging, setIsDragging] = useState(false);
-  const { stopExecution, isStopping } = useContext(ShellFxCtx);
+  const [dropNotice, setDropNotice] = useState("");
+  const { stopExecution, isStopping, voiceDraft, setVoiceDraft, voiceStatus, voiceOn, toggleVoice, voiceMode, setVoiceMode, archive } = useContext(ShellFxCtx);
   const [text, setText] = useState("");
   const [visibleCount, setVisibleCount] = useState(100);
   const visibleMessages = useMemo(() => visibleChatMessages(messages, visibleCount), [messages, visibleCount]);
@@ -1069,13 +1068,17 @@ function ChatPanel({ messages, pending, onSend, kernel, effortMode, changeEffort
   const inputRef = useChatInputFocus(messages, pending);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, pending]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "auto", block: "end" }); }, [messages, pending, streamByTask[currentTaskId]?.content]);
   const submit = (e) => { e.preventDefault(); if (pending) return; const v = text.trim(); if (!v) return; onSend(isSearchMode && !v.startsWith("/") ? `/pesquise ${v}` : v); setText(""); };
   const handleDrop = async (e) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
+    if (typeof window.pywebview?.api?.process_dropped_file !== "function") {
+      setDropNotice("Leitura de arquivos indisponivel neste Kernel.");
+      return;
+    }
     
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -1098,41 +1101,36 @@ function ChatPanel({ messages, pending, onSend, kernel, effortMode, changeEffort
         </div>
       )}
     <Bubble morph="a" delay={2} tag="comms" className="h-full" inner="flex flex-col p-5 pt-6">
-      <div className="mb-3"><Kinetic text="Conversa" size="clamp(34px,4.2vw,64px)" weight={250} /></div>
-      <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Profundidade de raciocínio">
-        <span className="text-xs" style={{color:'var(--muted)'}}>Profundidade:</span>
-        {['FAST','BALANCED','DEEP','AUTO'].map(mode => <button key={mode} type="button" aria-pressed={effortMode === mode}
-          onClick={() => changeEffort(mode)} className="rounded-full px-3 py-1 text-xs"
-          style={{border:'1px solid var(--edge)',background:effortMode === mode ? 'var(--violet)' : 'var(--chip)',color:effortMode === mode ? '#151020' : 'var(--text)'}}>{mode}</button>)}
-        {effortError && <span role="status" className="text-xs">{effortError}</span>}
-      </div>
-      <div className="mb-3"><CopyButton text={historyText} label="Copiar Histórico" /></div>
-      <div className="mb-2 text-xs opacity-70" role="status">Perfil: {conversationStatus?.profile || 'não disponível'} · Modelo configurado: {conversationStatus?.model || 'não disponível'} (disponibilidade não verificada)</div>
-      {pending && <ReasoningPanel events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]} />}
-      {pending && streamByTask[currentTaskId]?.content && <div className="whitespace-pre-wrap text-sm">{streamByTask[currentTaskId].content}{streamByTask[currentTaskId].gap ? '\n⚠️ Fluxo incompleto; aguardando resposta final.' : ''}</div>}
-      <div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+      {dropNotice && (
+        <p role="status" className="mb-2 text-xs">
+          {dropNotice}
+        </p>
+      )}
+      <div className="mb-3"><h2 className="text-xl font-medium">Conversa</h2></div>
+      <div className="bn-chat-messages no-scrollbar flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
         {visibleCount < messages.length && <button type="button" onClick={() => setVisibleCount(count => count + 100)} className="self-center text-xs" style={{color:'var(--cyan)'}}>Mostrar mensagens anteriores ({messages.length - visibleCount})</button>}
         <AnimatePresence initial={false}>
           {visibleMessages.map((m) => (
-            <motion.div key={m.id} layout initial={{ opacity: 0, y: 16, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }} whileHover={{ scale: 1.025, y: -2 }} transition={JELLY}
+            <motion.div key={m.id} initial={false}  transition={JELLY}
               className={`max-w-[86%] px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap flex flex-col ${m.role === "user" ? "self-end items-end rounded-[1.9rem] rounded-br-lg" : "self-start items-start rounded-[1.9rem] rounded-bl-lg"}`}
               style={{ background: m.role === "user" ? "var(--bubble-user)" : "var(--chip)", border: `1px solid ${m.role === "user" ? "var(--violet)" : "var(--edge)"}`, boxShadow: m.role === "user" ? "0 0 22px -8px var(--violet)" : "none" }}>
-              <div>{m.text}</div>
+              <RichText text={m.text} kernel={kernel} onNote={title=>onSend("/nota ler "+title)}/>
               {m.role === 'ai' && <ReasoningPanel events={reasoningByTask[m.taskId]} stream={streamByTask[m.taskId]} />}
               {m.longResumable && <button type="button" disabled={pending} onClick={() => onSend(`/continue ${m.longTaskId}`)}>Continuar geração</button>}
               <div className="mt-1 flex items-center gap-2 text-[9px] opacity-40" style={MONO}>
-                <span>{new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                {m.duration && <span>• {m.duration}s</span>}
+                <span>{m.timestamp ? new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                {Number.isFinite(m.durationMs) && <span>• {Math.round(m.durationMs)} ms · GUI↔kernel</span>}{m.resultStatus && <span>{m.resultStatus}</span>}
               </div>
               {m.role === "ai" && <MessageActions text={m.text} onSend={onSend} pending={pending} />}
             </motion.div>
           ))}
           {pending && (
-            <motion.div key="typing" layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-1.5 self-start rounded-[1.9rem] px-5 py-3.5" style={{ background: "var(--chip)", border: "1px solid var(--edge)" }}>
+            <motion.div key="typing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-1.5 self-start rounded-[1.9rem] px-5 py-3.5" style={{ background: "var(--chip)", border: "1px solid var(--edge)" }}>
               {[0, 1, 2].map((i) => <motion.span key={i} className="h-2 w-2 rounded-full" style={{ background: "var(--cyan)" }} animate={{ scale: [1, 1.6, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }} />)}
             </motion.div>
           )}
         </AnimatePresence>
+        {pending && <div className="bn-live-message"><ReasoningPanel events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]}/>{streamByTask[currentTaskId]?.content&&<RichText text={streamByTask[currentTaskId].content} kernel={kernel}/>}</div>}
         <div ref={endRef} />
       </div>
       {messages.length <= 1 && (
@@ -1143,14 +1141,23 @@ function ChatPanel({ messages, pending, onSend, kernel, effortMode, changeEffort
           ))}
         </div>
       )}
-      <form onSubmit={submit} className="mt-3 flex items-center gap-2 rounded-full py-1.5 pl-5 pr-1.5" style={{ background: "var(--chip)", border: "1px solid var(--edge)" }}>
+      <div className="bn-chat-composer">
+      <LiveTask pending={pending} events={reasoningByTask[currentTaskId]} stream={streamByTask[currentTaskId]}/>
+      <VoiceReview draft={voiceDraft ?? null} setDraft={setVoiceDraft} onSend={onSend} pending={pending} status={voiceStatus}/>
+      <form onSubmit={submit} className="bn-main-form" style={{ background: "var(--chip)", border: "1px solid var(--edge)" }}>
         <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder={isSearchMode ? "🔍 O que você quer pesquisar?" : "Digite uma mensagem ou /comando…"} className="flex-1 bg-transparent text-sm outline-none placeholder:opacity-60" style={{ color: "var(--text)" }} />
+        <div className="bn-chat-tools">
+          <details><summary>☰ Menu</summary><div className="bn-chat-pop"><CopyButton text={historyText} label="Copiar chat inteiro"/><ChatArchiveMenu archive={archive} pending={pending}/><button type="button" disabled={pending} onClick={()=>onSend('/checkup')}>Diagnóstico</button></div></details>
+          <select aria-label="Profundidade" title={effortError || "Profundidade de raciocínio"} value={effortMode || ""} disabled={pending} onChange={e=>changeEffort(e.target.value)}><option value="" disabled>Indisponível</option>{['FAST','BALANCED','DEEP','AUTO'].map(mode=><option key={mode} value={mode}>{mode==="DEEP"?"DeepThink":mode}</option>)}</select>
+          <MicControl voiceOn={voiceOn} toggleVoice={toggleVoice} voiceMode={voiceMode} setVoiceMode={setVoiceMode}/>
+        </div>
         <SearchButton isSearchMode={isSearchMode} toggle={() => { setIsSearchMode((value) => !value); inputRef.current?.focus({ preventScroll: true }); }} pending={pending} />
         <SendStopButton processing={pending} stopping={isStopping} onStop={stopExecution} whileHover={{ scale: 1.08 }} whileTap={{ scaleX: 0.86, scaleY: 0.8 }} transition={JELLY}
           className="grid h-10 w-10 place-items-center rounded-full" style={{ color: "var(--violet)", background: "var(--chip)", boxShadow: text ? "0 0 18px var(--glow)" : "none" }}>
           <Icon name="send" className="h-5 w-5" />
         </SendStopButton>
       </form>
+      </div>
     </Bubble>
     </div>
   );
@@ -1179,7 +1186,7 @@ function BrainStage({ skills, onNavigate, activity }) {
         );
       })}
       <div className="absolute bottom-5 left-7 text-[9px] tracking-[0.2em]" style={{ ...MONO, color: "var(--muted)" }}>
-        atividade <Readout base={activity * 100} drift={8} digits={1} className="text-[var(--text)]" /> % · sinapses {BRAIN.nodes.length}
+        indicador visual (estimativa) {Math.round(activity * 100)} % · sinapses {BRAIN.nodes.length}
       </div>
     </Bubble>
   );
@@ -1348,7 +1355,21 @@ function AutomationsSubGUI({ skill, kernel, pushLog }) {
  * Exemplo:  const SUBGUI_REGISTRY = { minhaskill: MinhaSkillSubGUI };
  * Cada componente recebe { skill, kernel, pushLog }. Sem registro, cai na GenericSubGUI.
  */
-const SUBGUI_REGISTRY = { automations: AutomationsSubGUI };
+function UnavailableAutomation() {
+      return (
+        <div role="status" className="p-4">
+          <h2 className="text-lg font-medium">Automacoes</h2>
+          <p className="mt-2">
+            Aguardando rotinas reais registradas pelo Kernel.
+            Nenhuma etapa simulada sera apresentada como executada.
+          </p>
+        </div>
+      );
+    }
+
+    const SUBGUI_REGISTRY = {
+      automations: UnavailableAutomation
+    };
 
 function GenericSubGUI({ skill, kernel, pushLog }) {
   const [busy, setBusy] = useState(false);
@@ -1795,7 +1816,7 @@ function KernelConsole({ logs, open, onToggle }) {
 let _uid = 0;
 const uid = () => ++_uid;
 const readLS = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
-const VIEW_NAMES = { home: "Início", chat: "Conversa", brain: "Cérebro", semantic: "Rede Semântica", telemetry: "Telemetria", schema: "Painel" };
+const VIEW_NAMES = { notes: "Notas", automations: "Automações", home: "Início", chat: "Conversa", brain: "Cérebro", semantic: "Rede Semântica", telemetry: "Telemetria", schema: "Painel" };
 
 const groupSkills = (skills) => {
   const loose = []; const map = new Map();
@@ -1898,47 +1919,7 @@ export default function MasterShell() {
     return () => window.removeEventListener('aios:stream', onStream);
   }, []);
 
-  // 1. PERSISTÊNCIA ROBUSTA DO TEMA (LOCALSTORAGE + KERNEL)
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem("brainnet_theme") || "dark";
-    } catch {
-      return "dark";
-    }
-  });
-
-  // Consulta o tema quando a ponte estiver pronta; não repete ao clicar.
-  useEffect(() => {
-    let alive = true, loaded = false;
-    const loadTheme = async () => {
-      const api = window.pywebview?.api;
-      if (loaded || typeof api?.get_theme !== "function") return;
-      loaded = true;
-      try {
-        const saved = await api.get_theme();
-        if (alive && (saved === "dark" || saved === "light")) {
-          setTheme(saved);
-          document.documentElement.setAttribute("data-theme", saved);
-        }
-      } catch (error) { console.warn("[kernel] Tema local mantido", error); }
-    };
-    window.addEventListener("pywebviewready", loadTheme);
-    loadTheme();
-    return () => { alive = false; window.removeEventListener("pywebviewready", loadTheme); };
-  }, []);
-
-  // Troca instantanea: salva no localStorage, avisa o Python e muda na hora sem loop
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem("brainnet_theme", next);
-      } catch { /* noop */ }
-      document.documentElement.setAttribute("data-theme", next);
-      kernel.call("set_theme", next);
-      return next;
-    });
-  }, [kernel]);
+  const {theme, toggleTheme, lite, setLite} = useShellSettings(kernel);
 
   // 2. CONTROLE DO MENU LATERAL
   const [menuOpen, setMenuOpen] = useState(() => {
@@ -1962,10 +1943,21 @@ export default function MasterShell() {
 
   // 3. ESTADOS NUCLEARES
   const [view, setView] = useState("home");
+  const [tabs, setTabs] = useState(["home"]);
+  const [notesVisited, setNotesVisited] = useState(false);
+  useEffect(() => {
+    setTabs(old => old.includes(view) ? old : [...old, view]);
+    if (view === "notes") setNotesVisited(true);
+  }, [view]);
+  const closeTab = id => {
+    if (id === "home") return;
+    setTabs(old => old.filter(x => x !== id));
+    if (view === id) setView("home");
+  };
   const [openFolder, setOpenFolder] = useState(null);
   const [skills, setSkills] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [consoleOpen, setConsoleOpen] = useState(true);
+  const [consoleOpen, setConsoleOpen] = useState(false);
   const [messages, setMessages] = useState([
     { id: uid(), role: "ai", text: "BRAINNET v7 pronto. Toque num bloco, fale ou digite um comando." }
   ]);
@@ -1973,8 +1965,32 @@ export default function MasterShell() {
   const [isStopping, setIsStopping] = useState(false);
   const pending = isProcessing || isStopping;
   const executionRef = useRef({ id: 0, processing: false, stopping: false });
+  const makeWelcome=useCallback(()=>({id:crypto.randomUUID(),role:"ai",text:"BRAINNET pronta.",timestamp:Date.now()}),[]);
+  const archive=useChatArchive(kernel,messages,setMessages,pending,executionRef,makeWelcome);
   const [voiceOn, setVoiceOn] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState(null);
+  const [voiceDraft, setVoiceDraft] = useState(null);
+  const [voiceMode,setVoiceMode] = useState(()=>readLS("bn_voice_mode","review")==="direct"?"direct":"review");
+  useEffect(()=>{try{localStorage.setItem("bn_voice_mode",voiceMode);}catch{}},[voiceMode]);
+  const voiceAutoCandidate = useRef(null);
+  const voiceRevision = useRef(-1);
+  const applyVoice = useCallback(value => {
+    if (value?.ok !== true || !Number.isInteger(value.revision) || value.revision < voiceRevision.current) return;
+    voiceRevision.current = value.revision;
+    setVoiceStatus(value);
+    setVoiceOn(value.active === true);
+    if (!value.active) setVoiceDraft(null);
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    const onState = e => applyVoice(e.detail);
+    const onDraft = e => { if (typeof e.detail?.text === "string") { voiceAutoCandidate.current = e.detail.text; setVoiceDraft(old => old ?? e.detail.text); } };
+    window.addEventListener("aios:voice_state", onState);
+    window.addEventListener("aios:voice_draft", onDraft);
+    kernel.call("get_voice_status").then(v => { if (alive) applyVoice(v); });
+    return () => {alive=false;window.removeEventListener("aios:voice_state", onState);window.removeEventListener("aios:voice_draft", onDraft);};
+  }, [kernel.call, applyVoice]);
   const [fullscreen, setFullscreen] = useState(true);
   const [widgetMode, setWidgetMode] = useState(false);
   const [intuition, setIntuition] = useState(null);
@@ -1992,7 +2008,7 @@ export default function MasterShell() {
   const [dynamicSchema, setDynamicSchema] = useState(null);
 
   const pushLog = useCallback((l) => setLogs((prev) => [...prev.slice(-199), { id: uid(), ...l }]), []);
-  const pushMessage = useCallback((m) => setMessages((prev) => [...prev, { id: uid(), ...m }]), []);
+  const pushMessage = useCallback((m) => setMessages((prev) => [...prev, { id: crypto.randomUUID(), timestamp:Date.now(), ...m }]), []);
 
   useEffect(() => {
     let alive = true;
@@ -2055,9 +2071,10 @@ export default function MasterShell() {
   }, [kernel.call, pushLog, pushMessage]);
 
   const sendCommand = useCallback(async (text) => {
-    if (executionRef.current.processing || executionRef.current.stopping) return;
+    if (!archive.ready.current || executionRef.current.processing || executionRef.current.stopping) return;
     const request = ++executionRef.current.id;
     executionRef.current.processing = true;
+    activeTask.current=null;setTaskTelemetry(null);
     const continuation = text.match(/^\/continue\s+([0-9a-f]{32})$/i);
     if (continuation) setMessages(previous => previous.map(message => message.id === `long:${continuation[1].toLowerCase()}` ? { ...message, longDone: false, longResumable: false } : message));
     pushMessage({ role: "user", text });
@@ -2086,7 +2103,7 @@ export default function MasterShell() {
         setMessages(previous => previous.some(message => message.id === id)
           ? previous.map(message => message.id === id ? { ...message, text: res.reply, taskId:res?.task_budget?.task_id, longDone: true, longTaskId:res.long_task_id, longResumable:['PARTIAL_ERROR','CANCELLED'].includes(res.status) } : message)
           : [...previous, { id, role:'ai', text:res.reply, taskId:res?.task_budget?.task_id, longDone:true, longTaskId:res.long_task_id, longResumable:['PARTIAL_ERROR','CANCELLED'].includes(res.status) }]);
-      } else if (res?.reply) pushMessage({ role: "ai", text: res.reply, taskId: res?.task_budget?.task_id });
+      } else if (res?.reply) pushMessage({ role: "ai", text: res.reply, taskId: res?.task_budget?.task_id, durationMs:roundtripMs, resultStatus:res.status });
       res?.logs?.forEach(pushLog);
       const incoming = extractSchema(res);
       if (incoming) { setDynamicSchema(incoming); setView("schema"); }
@@ -2101,7 +2118,30 @@ export default function MasterShell() {
         setIsProcessing(false);
       }
     }
-  }, [kernel.call, pushLog, pushMessage]);
+  }, [kernel.call, pushLog, pushMessage, archive.ready]);
+
+  useEffect(() => {
+    const selectNote = e => {
+      if (typeof e.detail?.title !== "string" || executionRef.current.processing || executionRef.current.stopping) return;
+      setView("chat");
+      sendCommand('/nota contexto '+e.detail.title);
+    };
+    window.addEventListener("aios:note_context",selectNote);
+    return ()=>window.removeEventListener("aios:note_context",selectNote);
+  }, [sendCommand]);
+  useEffect(() => {
+    if (voiceDraft === null || pending || !archive.ready.current) return;
+    setView("chat");
+    if (voiceMode !== "direct" || voiceAutoCandidate.current !== voiceDraft) return;
+    voiceAutoCandidate.current = null;
+    let active=true;
+    kernel.call("classify_voice_draft",voiceDraft).then(result=>{
+      if(!active || executionRef.current.processing || executionRef.current.stopping || !["CHAT","LOCAL_ACTION"].includes(result?.route))return;
+      setVoiceDraft(null);
+      sendCommand(result.route==='CHAT'?'/voz responder '+voiceDraft:voiceDraft);
+    });
+    return ()=>{active=false;};
+  }, [voiceDraft,pending,kernel.call,sendCommand,voiceMode,archive.busy]);
 
   const stopExecution = useCallback(async () => {
     if (executionRef.current.stopping) return;
@@ -2127,18 +2167,14 @@ export default function MasterShell() {
   }, [pushLog, pushMessage]);
 
   const toggleVoice = useCallback(async () => {
-    const next = !voiceOn;
+    if (voiceBusy) return;
     setVoiceBusy(true);
-    setVoiceOn(next);
-    const res = await kernel.call("set_voice", next);
-    if (res?.ok === false) {
-      setVoiceOn(!next);
-      pushLog({ level: "ERROR", core: "Voice", msg: res.error || "Falha ao alternar voz." });
-    } else {
-      pushLog({ level: "INFO", core: "Voice", msg: next ? "Escuta ativa." : "Escuta desativada." });
-    }
-    setVoiceBusy(false);
-  }, [voiceOn, kernel.call, pushLog]);
+    try {
+      const result = await kernel.call("set_voice", !voiceOn);
+      if (result?.ok === true) applyVoice(result);
+      else pushLog({level:"ERROR",core:"Voice",msg:result?.error || "Estado do microfone não confirmado"});
+    } finally { setVoiceBusy(false); }
+  }, [voiceOn, voiceBusy, kernel.call, applyVoice, pushLog]);
 
   /* divisor fluido entre Chat e Palco */
   const wrapRef = useRef(null);
@@ -2157,7 +2193,7 @@ export default function MasterShell() {
   }, [drag]);
 
   const groups = useMemo(() => groupSkills(skills), [skills]);
-  const known = view === "home" || view === "chat" || view === "brain" || view === "semantic" || view === "telemetry" || view === "schema" || skills.some((s) => s.id === view);
+  const known = view === "notes" || view === "automations" || view === "home" || view === "chat" || view === "semantic" || view === "telemetry" || view === "schema" || skills.some((s) => s.id === view);
   const v = known ? view : "home";
   const activeSkill = skills.find((s) => s.id === v) || null;
   const activity = Math.min(1, 0.22 + (voiceOn ? 0.35 : 0) + (pending ? 0.4 : 0));
@@ -2217,9 +2253,8 @@ export default function MasterShell() {
   }, [dynamicSchema, kernel, pushLog]);
 
   return (
-    <ShellFxCtx.Provider value={{ lite: widgetMode, stopExecution, isStopping }}>
+    <ShellFxCtx.Provider value={{ lite: lite || widgetMode, stopExecution, isStopping, voiceDraft, setVoiceDraft, voiceStatus, voiceOn, toggleVoice, voiceMode, setVoiceMode, archive }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@300..700&display=swap');
         @keyframes aios-iris{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
         @keyframes aios-breathe{0%,100%{opacity:.5}50%{opacity:1}}
         @keyframes aios-morph-a{0%,100%{border-radius:2.6rem 3.6rem 3rem 3.8rem/3.2rem 2.8rem 3.8rem 3rem}33%{border-radius:3.6rem 2.8rem 3.6rem 2.8rem/2.8rem 3.6rem 2.6rem 3.6rem}66%{border-radius:3rem 3.2rem 2.6rem 3.8rem/3.6rem 3rem 3.2rem 2.6rem}}
@@ -2235,70 +2270,47 @@ export default function MasterShell() {
       <SvgDefs />
 
       {!widgetMode && (
-      <div data-theme={theme} className="relative isolate h-screen w-screen select-none overflow-hidden font-sans antialiased"
+      <div data-theme={isLightTheme(theme) ? "light" : "dark"} className="relative isolate h-screen w-screen select-none overflow-hidden font-sans antialiased"
            style={{ ...THEMES[theme], fontFamily: DISPLAY, color: "var(--text)", background: widgetMode ? "transparent" : "radial-gradient(120% 90% at 50% 100%,var(--bg-a) 0%,var(--bg-b) 75%)", transition: "color .5s" }}>
         
-        {/* Bordas de redimensionamento (invisíveis) */}
-        <div className="absolute bottom-3 right-4 z-[90] rounded-lg p-2 text-xs"
-             style={{ background: "var(--chip)", border: "1px solid var(--edge)" }}>
-          <button type="button" aria-pressed={showPointers} onClick={() => setShowPointers(value => !value)}>
-            {showPointers ? "Ocultar cursores" : "Mostrar cursores"}
-          </button>
-          {" · "}
-          <button type="button" onClick={() => kernel.call("minimize_for_background")}>
-            Minimizar e continuar
-          </button>
-          {showPointers && Object.values(pointers).slice(0, 12).map(({id, action, target}) => (
-            <div key={id} className="pointer-events-none mt-1" title="Comando pendente ou em execução">
-              <span aria-hidden="true">➤</span> {action} · {id.slice(-4)}
-              {target?.every(Number.isInteger) ? ` (${target.join(", ")})` : ""}
-            </div>
-          ))}
-        </div>
-        {[
-          { dir: "top", cls: "top-0 left-2 right-2 h-1.5 cursor-ns-resize" },
-          { dir: "bottom", cls: "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize" },
-          { dir: "left", cls: "left-0 top-2 bottom-2 w-1.5 cursor-ew-resize" },
-          { dir: "right", cls: "right-0 top-2 bottom-2 w-1.5 cursor-ew-resize" },
-          { dir: "topleft", cls: "top-0 left-0 w-3 h-3 cursor-nwse-resize" },
-          { dir: "topright", cls: "top-0 right-0 w-3 h-3 cursor-nesw-resize" },
-          { dir: "bottomleft", cls: "bottom-0 left-0 w-3 h-3 cursor-nesw-resize" },
-          { dir: "bottomright", cls: "bottom-0 right-0 w-3 h-3 cursor-nwse-resize" },
-        ].map((edge) => (
-          <div
-            key={edge.dir}
-            className={`absolute z-[100] ${edge.cls}`}
-            onMouseDown={(e) => { e.preventDefault(); startResize(edge.dir); }}
-          />
-        ))}
-
-        <Atmosphere />
+        {showPointers && Object.keys(pointers).length > 0 && <div className="absolute bottom-2 right-3 z-50 p-2 text-xs" style={{background:"var(--cell)",border:"1px solid var(--edge)"}}>
+          {Object.values(pointers).slice(0,12).map(({id,action,target})=><div key={id}>{action} · {id.slice(-4)} {Array.isArray(target)&&target.every(Number.isInteger)?target.join(", "):""}</div>)}
+        </div>}
+        {!lite && <Atmosphere />}
         <div className="flex h-full gap-4 p-4">
-          <Menu expanded={menuOpen} onToggle={() => setMenuOpen((o) => !o)} view={v} onNavigate={navigate} skills={skills} groups={groups} voice={voice}
-                consoleOpen={consoleOpen} onToggleConsole={() => setConsoleOpen((o) => !o)} openFolder={openFolder} setOpenFolder={setOpenFolder} />
+          <WorkspaceSidebar expanded={menuOpen} onToggle={() => setMenuOpen(o=>!o)} view={v} onNavigate={navigate} skills={skills} voice={voice} consoleOpen={consoleOpen} onToggleConsole={()=>setConsoleOpen(o=>!o)} />
 
           <main className="flex min-w-0 flex-1 flex-col gap-4">
-            <Header kernel={kernel} theme={theme} onToggleTheme={toggleTheme} bridge={kernel.bridge} title={title} trail={trail} voiceOn={voiceOn}
-                    fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} widgetMode={widgetMode} onToggleWidget={toggleWidget} />
 
-            <div ref={wrapRef} className="flex min-h-0 flex-1 items-stretch">
+            <WorkspaceTabs tabs={tabs} view={v} onNavigate={navigate} onClose={closeTab} skills={skills}/>
+            {notesVisited && <div className="min-h-0 flex-1" style={{display:v === "notes" ? undefined : "none"}}><WorkspaceNotes kernel={kernel}/></div>}
+
+            <div ref={wrapRef} className="flex min-h-0 flex-1 items-stretch" style={{display:v === "notes" ? "none" : undefined}}>
               <AnimatePresence mode="wait" initial={false}>
-                {v === "home" ? (
+                {v === "notes" ? null : v === "home" ? (
                   <motion.div key="home" className="h-full min-h-0 min-w-0 flex-1" {...PAGE}>
-                    <Home groups={groups} messages={messages} logs={logs} theme={theme} onToggleTheme={toggleTheme} voice={voice} onNavigate={navigate}
-                          consoleOpen={consoleOpen} onToggleConsole={() => setConsoleOpen((o) => !o)} activity={activity} openFolder={openFolder} setOpenFolder={setOpenFolder}
-                          onSend={sendCommand} pending={pending} bridge={kernel.bridge} />
+                    <div className="flex h-full min-h-0 flex-col gap-3">
+                      <div className="bn-home-settings"><label>Tema <ThemePicker theme={theme} onToggle={toggleTheme}/></label><label><input type="checkbox" checked={lite} onChange={e=>setLite(e.target.checked)}/> Modo leve</label><label><input type="checkbox" checked={showPointers} onChange={e=>setShowPointers(e.target.checked)}/> Indicadores de ações</label><button onClick={toggleWidget} disabled={kernel.bridge!=="pywebview"}>Hotbar</button></div>
+                      <div className="min-h-0 flex-1"><Home groups={groups} messages={messages} logs={logs} theme={theme} onToggleTheme={toggleTheme} voice={voice} onNavigate={navigate} consoleOpen={consoleOpen} onToggleConsole={()=>setConsoleOpen(o=>!o)} activity={activity} openFolder={openFolder} setOpenFolder={setOpenFolder} onSend={sendCommand} pending={pending} bridge={kernel.bridge}/></div>
+                    </div>
                   </motion.div>
                 ) : v === "schema" ? (
                   <motion.div key="schema" className="h-full min-h-0 min-w-0 flex-1" {...PAGE}>
                     <Bubble morph="b" delay={4} tag="schema" className="h-full" inner="p-6 pt-7">
-                      <DynamicSchemaRenderer schema={dynamicSchema || SAMPLE_SCHEMA} onAction={onSchemaAction} />
+                      {dynamicSchema || kernel.bridge === "mock" ? (
+      <DynamicSchemaRenderer
+        schema={dynamicSchema || SAMPLE_SCHEMA}
+        onAction={onSchemaAction}
+      />
+    ) : (
+      <p role="status">Nenhum painel foi enviado pelo Kernel.</p>
+    )}
                     </Bubble>
                   </motion.div>
                 ) : v === "telemetry" ? (
-                  <motion.div key="telemetry" className="h-full min-h-0 min-w-0 flex-1" {...PAGE}><Suspense fallback={<p role="status">Carregando telemetria…</p>}><TelemetryDashboard task={taskTelemetry} bridge={kernel.bridge} /></Suspense></motion.div>
-                ) : v === "semantic" ? (
-                  <motion.div key="semantic" className="h-full min-h-0 min-w-0 flex-1" {...PAGE}><SemanticTrainer /></motion.div>
+                  <motion.div key="telemetry" className="h-full min-h-0 min-w-0 flex-1" {...PAGE}><Suspense fallback={<p role="status">Carregando telemetria…</p>}><TelemetryDashboard task={taskTelemetry} bridge={kernel.bridge} conversationStatus={conversationStatus} skills={skills} /></Suspense></motion.div>
+                ) : ["semantic","automations"].includes(v) ? (
+                  <motion.div key={v} className="h-full min-h-0 min-w-0 flex-1" {...PAGE}><CognitiveStatus type={v} task={taskTelemetry} conversationStatus={conversationStatus} skills={skills}/></motion.div>
                 ) : v === "chat" ? (
                   <motion.div key="chat" className="h-full min-h-0 min-w-0 flex-1" {...PAGE}><ChatPanel messages={messages} pending={pending} onSend={sendCommand} kernel={kernel} effortMode={effortMode} changeEffort={changeEffort} effortError={effortError} reasoningByTask={reasoningByTask} streamByTask={streamByTask} currentTaskId={taskTelemetry?.budget?.task_id} conversationStatus={conversationStatus} /></motion.div>
                 ) : (
@@ -2322,7 +2334,7 @@ export default function MasterShell() {
               </AnimatePresence>
             </div>
 
-            <KernelConsole logs={logs} open={consoleOpen} onToggle={() => setConsoleOpen((o) => !o)} />
+            {consoleOpen && <KernelConsole logs={logs} open={consoleOpen} onToggle={() => setConsoleOpen(o=>!o)} />}
           </main>
         </div>
       </div>
@@ -2356,7 +2368,16 @@ export default function MasterShell() {
         <Hotbar 
           isMicActive={voiceOn}
           onMic={toggleVoice}
-          onSearch={() => console.log("Pesquisa em breve")}
+          onSearch={async () => {
+      const result = await kernel.call("set_widget_mode", false);
+      if (result?.ok === true) {
+        setWidgetMode(false);
+        setView("chat");
+      } else {
+        pushLog({level:"ERROR", core:"Widget",
+                 msg:"Nao foi possivel restaurar a janela."});
+      }
+    }}
           onExpand={toggleWidget}
           onClose={toggleWidget}
         />
