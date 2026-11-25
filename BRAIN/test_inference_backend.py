@@ -57,6 +57,24 @@ class TestInferenceBackend(unittest.TestCase):
         opener = Mock(return_value=Response(json.dumps({'choices':[{'message':{'content':'ola'}}]}).encode()))
         self.assertEqual(self.make(opener).chat(InferenceRequest(messages=[{'role':'user','content':'oi'}])).text, 'ola')
 
+    def test_llama_chat_explicitly_requests_json_format(self):
+        opener = Mock(return_value=Response(
+            json.dumps({"choices": [{"message": {"content": '{"intent_type":"none"}'}}]}).encode()
+        ))
+        backend = self.make(opener)
+        messages = [{"role": "user", "content": "Não abra o Paint."}]
+
+        structured = backend.chat(InferenceRequest(messages=messages, json_output=True))
+        payload = json.loads(opener.call_args.args[0].data)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["temperature"], 0)
+        self.assertEqual(json.loads(structured.text), {"intent_type": "none"})
+
+        backend.chat(InferenceRequest(messages=messages))
+        payload = json.loads(opener.call_args.args[0].data)
+        self.assertNotIn("response_format", payload)
+        self.assertNotIn("temperature", payload)
+
     def test_ollama_full_and_stream(self):
         opener = Mock(return_value=Response(json.dumps({'response': 'ola', 'done': True}).encode()))
         backend = HTTPInferenceBackend('http://127.0.0.1:11435', 'm', 'ollama', opener=opener)

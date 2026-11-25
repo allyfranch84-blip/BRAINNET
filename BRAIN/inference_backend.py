@@ -226,6 +226,9 @@ class HTTPInferenceBackend(InferenceBackend):
             body = {"stream": stream, "n_predict": request.max_tokens}
             if chat:
                 body = {"model": model, "messages": request.messages, "stream": stream, "max_tokens": request.max_tokens}
+                if request.json_output:
+                    body["response_format"] = {"type": "json_object"}
+                    body["temperature"] = 0
             else:
                 body["prompt"] = request.prompt
         if chat and (not isinstance(request.messages, list) or not request.messages):

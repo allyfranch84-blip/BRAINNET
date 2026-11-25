@@ -470,6 +470,8 @@ class BrainnetBridge:
         self._semantic_sequence_lock = threading.Lock()
         self._last_motor_direction = None
         self._ui_motor_window = None
+        from project_conversation import ProjectConversation
+        self._project_conversation = ProjectConversation(Path(__file__).resolve().parents[1] / "PROJETOS")
         from cognitive_context import CognitiveContext
         self._cognitive_context = CognitiveContext(self._kernel.vsa)
         from contextual_grounder import ContextualGrounder
@@ -788,11 +790,76 @@ class BrainnetBridge:
                 return {'reply':f'UIA indisponível ({type(exc).__name__}).', 'logs':[], 'status':'UNAVAILABLE'}
         return None
 
+    def _project_or_code_map(self, text: str):
+        if re.match(r'^/c[oó]digo\s+mapa(?:\s|$)', text, re.IGNORECASE):
+            from code_mapper import format_code_summary, summarize_modules
+
+            modules = text.split()[2:]
+            if not modules:
+                return {'status': 'TARGET_REQUIRED',
+                        'reply': 'Informe até seis módulos locais. Exemplo: /codigo mapa actuator_bridge.py',
+                        'logs': [], 'dispatched': False}
+            try:
+                summary = summarize_modules(Path(__file__).resolve().parent, modules, symbol_limit=8)
+            except (OSError, ValueError) as exc:
+                return {'status': 'ACTION_BLOCKED', 'reply': str(exc), 'logs': [], 'dispatched': False}
+            readable = any(module['status'] == 'OK' for module in summary['modules'])
+            return {'status': 'OBSERVED' if readable else 'INCONCLUSIVE',
+                    'reply': format_code_summary(summary), 'code_summary': summary,
+                    'logs': [], 'dispatched': False}
+
+        from adaptive_resource_controller import current_task_budget
+
+        wiki = re.fullmatch(r'/pesquisa\s+wikip[eé]dia(?:\s+(.+))?', text, re.IGNORECASE)
+        if wiki:
+            from research_sources import search_wikipedia
+
+            term = (wiki[1] or '').strip()
+            if not term or len(term) > 300:
+                return {'status': 'TARGET_REQUIRED', 'reply': 'Use /pesquisa wikipedia <termo de até 300 caracteres>.',
+                        'logs': [], 'dispatched': False}
+            budget = current_task_budget.get()
+            operation = budget.begin_tool('wikipedia_search') if budget else None
+            confirmed = False
+            try:
+                timeout = min(8, budget.deadline_monotonic-time.monotonic()) if budget else 8
+                results = search_wikipedia(term, timeout=max(.001, timeout))
+                confirmed = True
+                if budget:
+                    budget.check_active()
+            except (OSError, ValueError):
+                return {'status': 'SOURCE_UNAVAILABLE', 'reply': 'A Wikipédia em português ficou indisponível nesta consulta.',
+                        'logs': [], 'dispatched': False}
+            finally:
+                if budget and operation:
+                    budget.finish_inference(operation, confirmed=confirmed)
+            reply = 'Resultados na Wikipédia em português. Os artigos podem ser consultados pelos links.'
+            for item in results:
+                reply += f"\n• {item['title']} — {item['url']}"
+            return {'status': 'SOURCES_FOUND' if results else 'EMPTY',
+                    'reply': reply if results else 'A consulta não retornou artigos.',
+                    'sources': results, 'logs': [], 'dispatched': False}
+
+        project = getattr(self, '_project_conversation', None)
+        if project is None:
+            return None
+        budget = current_task_budget.get()
+        if budget is None:
+            return None
+        outcome = project.handle(text, cancelled=lambda: budget.cancellation_event.is_set()
+                                 or time.monotonic() >= budget.deadline_monotonic)
+        if outcome is None:
+            return None
+        return {'logs': [], 'dispatched': False, **outcome}
+
     def _send_command_impl(self, text: str) -> Dict[str, Any]:
         from parser_contract import analyze_literal_intent, parse_supervised_mouse_move
         prompt_raw = text.strip()
         p_low = prompt_raw.lower()
         p_norm = re.sub(r"\s+", " ", p_low).strip()
+        capability = self._project_or_code_map(prompt_raw)
+        if capability is not None:
+            return capability
         # Local chat functions must work even without model or full kernel.
         if p_norm in ('/copy all', '/copie all', '/copy tudo', '/copie tudo', '/copy-all', '/copietudo', '/copy', '/copie'):
             history = list(self._chat_history)
@@ -2274,13 +2341,24 @@ class BrainnetBridge:
         from assistant_prompts import MODELO_PARSER
         from inference_backend import HTTPInferenceBackend, InferenceRequest, BackendUnavailable, ModelUnavailable, InferenceTimeout
         from motor_intent import SYSTEM_PROMPT, parse_semantic_response, resolve_move, MAX_DISTANCE
-        from intent_grounding import ground_plan, mentioned_apps
+        from intent_grounding import direct_app_request, ground_plan, mentioned_apps
         from capability_lab import observe_physical_monitor, observe_cursor_monitors
         from execution_authority import PhysicalMoveProposal, PhysicalMoveApproval, authorization_scope
 
         budget = current_task_budget.get()
         if budget is None or budget.cancellation_event is not current_authorization():
             return {'status':'ACTION_BLOCKED','reply':'Comando sem contexto ativo.','logs':[], 'dispatched':False}
+        def clarify_application():
+            return {'status':'CLARIFICATION_REQUIRED', 'code':'APPLICATION_AMBIGUOUS',
+                    'reply':'Qual aplicativo você quer abrir? Indique um único nome.',
+                    'logs':[], 'dispatched':False}
+
+        try:
+            local_app_plan = direct_app_request(text)
+        except ValueError as exc:
+            if str(exc) == 'APPLICATION_AMBIGUOUS':
+                return clarify_application()
+            raise
         key = ' '.join(text.casefold().split())
         initial = observe_physical_monitor()
         with self._p4_lock:
@@ -2301,9 +2379,12 @@ class BrainnetBridge:
         def same_context(a, b):
             return observed(a) and observed(b) and all(a.get(k) == b.get(k) for k in ('cursor','monitor','monitor_rect'))
 
-        with self._p4_lock:
-            plan = self._motor_plan_cache.get(key)
-        source = 'VERIFIED_SESSION_CACHE' if plan else 'SEMANTIC_MODEL'
+        if local_app_plan is not None:
+            plan, source = local_app_plan, 'BUILTIN_VERIFIED_CAPABILITY'
+        else:
+            with self._p4_lock:
+                plan = self._motor_plan_cache.get(key)
+            source = 'VERIFIED_SESSION_CACHE' if plan else 'SEMANTIC_MODEL'
         if plan is None:
             model = os.getenv('BRAINNET_MOTOR_MODEL', MODELO_PARSER)
             operation = budget.begin_inference(estimated_tokens=512)
@@ -2354,6 +2435,8 @@ class BrainnetBridge:
             plan=ground_plan(text,plan,reference=reference)
         except ValueError as exc:
             logger.warning('[MOTOR_GROUNDING] task_id=%s reason=%s',budget.task_id,exc)
+            if str(exc) == 'APPLICATION_AMBIGUOUS':
+                return clarify_application()
             return {'status':'ACTION_BLOCKED','reply':f'Plano rejeitado antes de agir: {exc}. A ordem atual não sustenta todas as ações propostas. Nenhuma ação executada.','logs':[],'dispatched':False}
         special={'open_app','move_to','click_target','inspect_monitor','inspect_context'}
         if len(plan['steps'])>1 and any(s['action'] in special for s in plan['steps']):
@@ -2867,6 +2950,9 @@ class BrainnetBridge:
                 approval.cancel()
                 budget.cancellation_event.set()
             self._p4_pending.clear()
+        project = getattr(self, '_project_conversation', None)
+        if project is not None:
+            project.cancel()
         self._skill_abort.set()
         self._voice_active = False
         self._ear.stop_listening()

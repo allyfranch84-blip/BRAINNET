@@ -79,7 +79,7 @@ def test_contaminated_atomic_model_response_is_rejected_before_dispatch():
     # This is deliberately malformed for the new discriminator: it claims an
     # atomic intent but carries a second historical UI action.
     response = SimpleNamespace(
-        text=('{"intent_type":"atomic","step":{"action":"open_app","target":"notepad"},'
+        text=('{"intent_type":"atomic","step":{"action":"open_app","target":"discord"},'
               '"steps":[{"action":"move_to","target":"Ampliar"}]}'),
         finish_reason='stop', output_tokens=20)
     try:
@@ -87,7 +87,7 @@ def test_contaminated_atomic_model_response_is_rejected_before_dispatch():
              patch('capability_lab.observe_physical_monitor',return_value=state), \
              patch('inference_backend.HTTPInferenceBackend.chat',return_value=response), \
              patch.object(bridge,'_dispatch_direct_p4_move') as dispatch:
-            result=bridge.send_command('Abra o Bloco de Notas')
+            result=bridge.send_command('Abra o Discord')
         assert result['status']=='UNAVAILABLE'
         assert result['dispatched'] is False
         dispatch.assert_not_called()

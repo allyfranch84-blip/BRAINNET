@@ -20,13 +20,6 @@ from typing import Generator, List, Optional
 
 import psutil
 
-try:
-    import pythoncom
-    import wmi
-    HAS_WMI = True
-except ImportError:
-    HAS_WMI = False
-
 logger = logging.getLogger("AIOS.Governance")
 logger.setLevel(logging.INFO)
 
@@ -120,12 +113,17 @@ class SystemGovernance:
         psutil.cpu_percent(interval=None, percpu=True)
 
     def _init_wmi(self) -> None:
-        if HAS_WMI:
-            try:
-                pythoncom.CoInitialize()
-                self._wmi_instance = wmi.WMI()
-            except Exception as e:
-                logger.warning(f"Aviso de inicializacao COM/WMI: {e}")
+        try:
+            import pythoncom
+
+            pythoncom.CoInitialize()
+            import wmi
+
+            self._wmi_instance = wmi.WMI()
+        except Exception as exc:
+            # Importing wmi can itself open a COM connection. A missing or
+            # restricted provider must not prevent loading the rest of the kernel.
+            logger.warning("Provedor opcional COM/WMI indisponível (%s).", type(exc).__name__)
 
     def get_cpu_metrics(self) -> CPUMetrics:
         """Collects usage across all 28 execution threads of Xeon E5-2680 v4."""
@@ -157,7 +155,7 @@ class SystemGovernance:
             return self._cached_vram
 
         dedicated_bytes = 0
-        if HAS_WMI and self._wmi_instance:
+        if self._wmi_instance is not None:
             try:
                 counters = self._wmi_instance.Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory()
                 for c in counters:

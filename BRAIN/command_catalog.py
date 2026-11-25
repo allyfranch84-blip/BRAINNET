@@ -1,5 +1,8 @@
 """Command descriptions only; existing bridge remains the sole dispatcher."""
 COMMANDS = (
+ ('Chat','/projeto corrida | /projeto cancelar','Esclarece requisitos ou cancela o protótipo local de corrida.','experimental','Node.js para verificação','sim: arquivos de projeto'),
+ ('Chat','/pesquisa wikipedia <termo>','Busca artigos na Wikipédia em português e devolve links para as fontes.','disponível','Wikipédia acessível','não para pesquisa'),
+ ('Diagnóstico','/codigo mapa <arquivo.py>','Resume símbolos e dependências dos módulos locais com referências ao código.','experimental','módulos Python locais','não'),
  ('Chat','/escreva <tema>','Rascunho por seções; conclusão e retomada são parciais.','experimental','modelo conversacional','não'),
  ('Chat','/continue <id>','Retoma seções elegíveis de um rascunho.','experimental','checkpoint e modelo','não'),
  ('Chat','/copy | /copie | /copy all | /copie all | /copy tudo | /copie tudo | /copy-all | /copietudo','Copia mensagens recentes ou histórico.','experimental','área de transferência','sim: escrita'),

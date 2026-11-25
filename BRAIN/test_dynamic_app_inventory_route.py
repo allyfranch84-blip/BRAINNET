@@ -1,7 +1,7 @@
 """Dynamic application launch contracts; no registry writes or process launch."""
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from causal_trajectory import DynamicAppInventory
 from execution_authority import authorization_scope
@@ -63,3 +63,40 @@ def test_dynamic_shortcut_with_arguments_is_blocked_without_dispatch():
     assert result['code']=='APP_SHORTCUT_ARGUMENTS_BLOCKED' and result['dispatched'] is False
     resolved.assert_called_once_with('C:/Programs/Unsafe.lnk')
     popen.assert_not_called()
+
+
+def test_dynamic_open_binds_only_the_inventoried_process_image():
+    browser = Mock()
+    browser.name.return_value = 'msedge.exe'
+    browser.exe.return_value = 'C:/Browser/msedge.exe'
+    app = Mock()
+    app.name.return_value = 'Discord.exe'
+    app.exe.return_value = 'C:/Apps/Discord.exe'
+    app.create_time.return_value = 30
+    with authorization_scope(threading.Event()), \
+         patch('causal_trajectory.DynamicAppInventory.resolve_exact',
+               return_value={'tipo': 'PATH', 'cmd': 'C:/Apps/Discord.exe'}), \
+         patch('ui_motor_context.os.path.isfile', return_value=True), \
+         patch('win32gui.EnumWindows', side_effect=lambda visit, param: [visit(1, param), visit(2, param)]), \
+         patch('win32gui.IsWindowVisible', return_value=True), \
+         patch('win32gui.GetWindowText', return_value='Discord'), \
+         patch('win32gui.GetForegroundWindow', return_value=1), \
+         patch('win32process.GetWindowThreadProcessId', side_effect=lambda hwnd: (0, hwnd + 100)), \
+         patch('psutil.Process', side_effect=[browser, app]), \
+         patch('uia_chat_readonly.inspect_window', return_value={'hwnd': 2, 'pid': 102, 'started': 30}) as inspect, \
+         patch('ui_motor_context.subprocess.Popen') as popen:
+        result = open_application('Discord', deadline=time.monotonic() + 5)
+    assert result['status'] == 'EFFECT_VERIFIED'
+    assert result['window']['hwnd'] == 2
+    assert result['focused'] is False and result['dispatched'] is False
+    inspect.assert_called_once_with(2)
+    popen.assert_not_called()
+
+
+def test_inventory_shortcut_cannot_launch_an_intermediate_command_host():
+    from ui_motor_context import dynamic_launch_path
+
+    with patch('ui_motor_context.os.path.isfile', return_value=True), \
+         patch('ui_motor_context._shortcut_target', return_value=('C:/Windows/System32/cmd.exe', '')):
+        _, code = dynamic_launch_path({'tipo': 'LNK', 'cmd': 'C:/Apps/Discord.lnk'})
+    assert code == 'APP_COMMAND_HOST_BLOCKED'

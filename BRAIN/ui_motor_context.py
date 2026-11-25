@@ -10,6 +10,10 @@ CONTROL_TYPES = frozenset(('ButtonControl','SplitButtonControl','MenuItemControl
     'CheckBoxControl','RadioButtonControl','ComboBoxControl','EditControl','ListItemControl',
     'TreeItemControl','HyperlinkControl','SliderControl','ScrollBarControl','DataItemControl',
     'MenuBarControl','ToolBarControl'))
+_COMMAND_HOSTS = frozenset({
+    'cmd.exe', 'powershell.exe', 'pwsh.exe', 'wscript.exe', 'cscript.exe',
+    'mshta.exe', 'rundll32.exe', 'regsvr32.exe', 'msiexec.exe',
+})
 
 
 def normalize(value):
@@ -49,6 +53,8 @@ def dynamic_launch_path(entry):
     if (not isinstance(path, str) or not os.path.isabs(path)
             or not os.path.isfile(path) or os.path.splitext(path)[1].casefold() != '.exe'):
         return None, 'APP_ENTRY_INVALID'
+    if os.path.basename(path).casefold() in _COMMAND_HOSTS:
+        return None, 'APP_COMMAND_HOST_BLOCKED'
     return path, None
 
 
@@ -417,6 +423,22 @@ def open_application(app, *, deadline):
     # require an exact DynamicAppInventory entry for all other application names.
     app=canonical_app(app) or normalize(app)
     static=mapping.get(app)
+    def check():
+        require_action_allowed('OPEN_APP')
+        if time.monotonic() >= deadline:
+            raise TimeoutError('OPEN_APP_EXPIRED')
+    check()
+    expected_image = None
+    if static is None:
+        from causal_trajectory import DynamicAppInventory
+        entry = DynamicAppInventory().resolve_exact(app)
+        path, code = dynamic_launch_path(entry)
+        if code:
+            return {'status':'ACTION_BLOCKED','code':code,'dispatched':False}
+        expected_image = os.path.normcase(os.path.realpath(path))
+    else:
+        path = os.path.join(win32api.GetSystemDirectory(), static[0])
+
     def lookup():
         import win32process
         import psutil
@@ -427,38 +449,26 @@ def open_application(app, *, deadline):
                 if not win32gui.IsWindowVisible(hwnd) or not win32gui.GetWindowText(hwnd):
                     return True
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                process = psutil.Process(pid).name()
+                process = psutil.Process(pid)
+                name = process.name()
                 if static is not None:
-                    matches_process=process.casefold() in tuple(p.casefold() for p in static[1])
+                    matches_process = name.casefold() in tuple(p.casefold() for p in static[1])
                 else:
-                    matches_process=(normalize(app) in normalize(process) or normalize(app) in normalize(win32gui.GetWindowText(hwnd)))
+                    matches_process = os.path.normcase(os.path.realpath(process.exe())) == expected_image
                 if matches_process:
                     identity = inspect_window(hwnd)
-                    if identity and identity['pid'] == pid:
-                        windows.append({**identity,'app':process})
+                    if identity and identity['pid'] == pid and identity['started'] == process.create_time():
+                        windows.append({**identity, 'app': name})
             except Exception:
                 pass
             return True
         win32gui.EnumWindows(visit, None)
         return windows
-    def check():
-        require_action_allowed('OPEN_APP')
-        if time.monotonic() >= deadline:
-            raise TimeoutError('OPEN_APP_EXPIRED')
-    check()
     matches=lookup()
     launched=False
     if not matches:
-        if static is not None:
-            path=os.path.join(win32api.GetSystemDirectory(),static[0])
-            if not os.path.isfile(path):
-                return {'status':'UNAVAILABLE','code':'APP_EXECUTABLE_MISSING','dispatched':False}
-        else:
-            from causal_trajectory import DynamicAppInventory
-            entry=DynamicAppInventory().resolve_exact(app)
-            path, code=dynamic_launch_path(entry)
-            if code:
-                return {'status':'ACTION_BLOCKED','code':code,'dispatched':False}
+        if static is not None and not os.path.isfile(path):
+            return {'status':'UNAVAILABLE','code':'APP_EXECUTABLE_MISSING','dispatched':False}
         check()
         subprocess.Popen([path],shell=False)
         launched=True
