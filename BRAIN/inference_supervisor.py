@@ -54,6 +54,7 @@ class InferenceSupervisor:
         self.attempts=0
         self.worker=None
         self.reset_done=False
+        self.recovery_requested=threading.Event()
 
     def _json(self,path,data=None,timeout=3):
         req=Request(self.endpoint+path,data=json.dumps(data).encode() if data is not None else None,
@@ -87,9 +88,10 @@ class InferenceSupervisor:
             gguf=os.getenv('BRAINNET_LLAMA_GGUF')
             if not executable or not gguf:
                 raise RuntimeError('Configure BRAINNET_LLAMA_EXE and BRAINNET_LLAMA_GGUF')
+            device=os.getenv('BRAINNET_LLAMA_DEVICE','vulkan')
             self.manager=LlamaProcessManager(executable,gguf,endpoint=self.endpoint,
-                device=os.getenv('BRAINNET_LLAMA_DEVICE','vulkan'),
-                gpu_layers=int(os.getenv('BRAINNET_LLAMA_GPU_LAYERS','20')),
+                device=device,
+                gpu_layers=int(os.getenv('BRAINNET_LLAMA_GPU_LAYERS','0' if device=='cpu' else '20')),
                 context_size=4096,concurrency=1,load_mode=os.getenv('BRAINNET_LLAMA_LOAD_MODE') or None)
             if self.manager.start()!='started':
                 raise RuntimeError('llama-server not owned by supervisor')
@@ -165,25 +167,35 @@ class InferenceSupervisor:
                     reset_inference_processes()
                 self._spawn()
                 self._warmup()
+                self.recovery_requested.clear()
                 LOG.info('Inference READY backend=%s model=%s endpoint=%s',self.kind,self.model,self.endpoint)
                 return True
             except Exception as exc:
                 self.error=f'{type(exc).__name__}: {exc}'
                 self.state='UNAVAILABLE'
                 LOG.error('Inference unavailable: %s',self.error)
-                # A startup failure is not a reason to kill external processes.
+                # Only clean up children created by this supervisor.
+                try: self._stop_owned()
+                except Exception: LOG.exception('Owned startup cleanup failed')
                 return False
 
     def monitor(self):
         while not self.stop_event.wait(5):
             with self.lock:
-                if self._alive():
+                if self._alive() and not self.recovery_requested.is_set():
                     # Do not restart a live server merely because it is busy.
                     continue
                 if self.attempts>=2:
                     self.state='RESTART_LIMIT'
                     return
                 self.attempts+=1
+                if self.recovery_requested.is_set():
+                    try: self._stop_owned()
+                    except Exception:
+                        LOG.exception('Owned recovery cleanup failed')
+                        self.state='UNAVAILABLE'
+                        return
+                    self.recovery_requested.clear()
             if self.stop_event.wait(5*self.attempts):
                 return
             self.start()
@@ -201,6 +213,22 @@ class InferenceSupervisor:
         if self.kind=='llamacpp' and model!=self.model:
             raise ModelUnavailable('Independent server has only the configured model loaded')
         return HTTPInferenceBackend(self.endpoint,model,self.kind,supervisor=self.manager)
+
+    def report_failure(self,exc):
+        # Do not treat a slow inference, invalid JSON or missing model as crash.
+        # Only request recovery after the server health probe also fails.
+        from inference_backend import BackendUnavailable,ProcessFailed
+        if not isinstance(exc,(BackendUnavailable,ProcessFailed)):
+            return
+        with self.lock:
+            if self.state!='READY':
+                return
+            try:
+                self._json('/api/version' if self.kind=='ollama' else '/health',timeout=3)
+            except Exception:
+                self.error=f'{type(exc).__name__}: {exc}'
+                self.state='UNAVAILABLE'
+                self.recovery_requested.set()
 
     def status(self):
         return {'backend':self.kind,'endpoint':self.endpoint,'model':self.model,
