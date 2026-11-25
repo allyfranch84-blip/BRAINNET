@@ -97,3 +97,43 @@ def test_queue_is_bounded(bridge):
         assert bridge.send("PING", 1)["dispatch_state"] == "NOT_DISPATCHED"
         assert request(bridge, "POST", "/result", {"id":cmd["id"],"result":{"ok":True}})[0] == 200
         assert future.result()["ok"]
+
+
+def test_two_requests_keep_result_identity(bridge):
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(bridge.send, "PING", 2, tag="first")
+        second = pool.submit(bridge.send, "PING", 2, tag="second")
+        commands = [request(bridge, "GET", "/poll")[1] for _ in range(2)]
+        assert {cmd["tag"] for cmd in commands} == {"first", "second"}
+        assert commands[0]["id"] != commands[1]["id"]
+        for cmd in reversed(commands):
+            assert request(bridge, "POST", "/result", {"id": cmd["id"], "result": {"ok": True, "tag": cmd["tag"]}})[0] == 200
+        assert first.result()["tag"] == "first"
+        assert second.result()["tag"] == "second"
+
+
+def test_result_before_dispatch_is_rejected(bridge):
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(bridge.send, "PING", 2)
+        deadline = time.monotonic() + 1
+        with bridge._condition:
+            while not bridge._pending and time.monotonic() < deadline:
+                bridge._condition.wait(max(0, deadline - time.monotonic()))
+            cmd_id = next(iter(bridge._pending))
+        payload = {"id": cmd_id, "result": {"ok": True}}
+        assert request(bridge, "POST", "/result", payload)[0] == 409
+        assert not future.done()
+        assert request(bridge, "GET", "/poll")[1]["id"] == cmd_id
+        assert request(bridge, "POST", "/result", payload)[0] == 200
+        assert future.result()["ok"]
+
+
+def test_invalid_token_does_not_create_transport():
+    with pytest.raises(ValueError):
+        BrowserTransport("", 0)
+
+
+def test_port_collision_preserves_first_server(bridge):
+    with pytest.raises(OSError):
+        BrowserTransport(TOKEN, bridge.port)
+    assert request(bridge, "GET", "/heartbeat")[0] == 200
