@@ -177,6 +177,28 @@ def direct_app_request(text):
     return {'status': 'execute', 'steps': [{'action': 'open_app', 'target': evidence[0][1]}]}
 
 
+def explicit_app_choices(text):
+    """Carry forward only an explicit opening verb with known, alternative targets."""
+    if not isinstance(text, str) or len(text) > 320 or '?' in text:
+        return ()
+    alternatives = re.split(r'\s+ou\s+', _fold(text.strip().rstrip('.!')))
+    if not 2 <= len(alternatives) <= 4:
+        return ()
+    targets = []
+    for i, phrase in enumerate(alternatives):
+        # Later noun phrases inherit the opening verb only within this sentence.
+        plan = direct_app_request(phrase)
+        if i and plan is None:
+            plan = direct_app_request('abra ' + phrase)
+        if plan is None:
+            return ()
+        target = plan['steps'][0]['target']
+        if target in targets:
+            return ()
+        targets.append(target)
+    return tuple(targets)
+
+
 def _negated_action_cues(text):
     parts = _CLAUSE_SPLIT.split(_fold(text))
     prohibited = set()

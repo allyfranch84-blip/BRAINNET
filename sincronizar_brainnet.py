@@ -23,8 +23,11 @@ PROJECT = Path("INTERFACE DE USUARIO/BRAINDET IU/project")
 # Installed client policy. New destinations require a reviewed client change.
 TARGETS = frozenset((
     "BRAIN/inference_supervisor.py", "BRAIN/test_inference_supervisor.py",
-    "iniciar/iniciar_aios.bat",
+    "iniciar/iniciar_aios.bat", "BRAIN/BRAINNET.py", "BRAIN/intent_grounding.py",
+    "BRAIN/test_workspace_choice.py",
 ))
+# Only a new test file in this release may be absent before installation.
+ADDITIONS = frozenset(("BRAIN/test_workspace_choice.py",))
 
 
 def git(*args):
@@ -70,12 +73,16 @@ def plan(root, release, read_blob):
         name = item["path"]
         if name not in TARGETS or name in result or set(item) != {"path", "before", "after"}:
             raise ValueError("Destino inválido ou duplicado")
-        if any(not isinstance(h, str) or not re.fullmatch("[0-9a-f]{64}", h) for h in (item["before"], item["after"])):
+        new_file = item["before"] is None and name in ADDITIONS
+        hashes = (item["after"],) if new_file else (item["before"], item["after"])
+        if any(not isinstance(h, str) or not re.fullmatch("[0-9a-f]{64}", h) for h in hashes):
             raise ValueError("Hash inválido")
         new = read_blob(name)
         if source_hash(new) != item["after"]:
             raise ValueError("Hash do conteúdo remoto divergente: " + name)
         path = safe_path(root, name)
+        if path.exists() and not path.is_file():
+            raise ValueError("Destino não é arquivo regular: " + name)
         old = path.read_bytes() if path.is_file() else None
         current = source_hash(old) if old is not None else None
         status = "PRESENT" if current == item["after"] else "UPDATE" if current == item["before"] else "CONFLICT"
@@ -99,7 +106,15 @@ def replace_if_unchanged(root, name, expected, replacement):
             tmp.unlink()
             raise
     try:
-        if safe_path(root, name).read_bytes() != expected:
+        path = safe_path(root, name)
+        if expected is None:
+            # Windows rename is atomic and refuses to overwrite an existing target.
+            if os.name == "nt":
+                os.rename(tmp, path)
+            else:
+                os.link(tmp, path)
+            return
+        if path.read_bytes() != expected:
             raise RuntimeError("Arquivo mudou durante a atualização: " + name)
         shutil.copymode(path, tmp)
         os.replace(tmp, path)
@@ -107,16 +122,19 @@ def replace_if_unchanged(root, name, expected, replacement):
         tmp.unlink(missing_ok=True)
 
 
-def validate(root):
+def validate(root, changes):
     python = root / "VENV/Scripts/python.exe"
+    tests = ["test_inference_supervisor.py"]
+    if "BRAIN/test_workspace_choice.py" in changes:
+        tests.append("test_workspace_choice.py")
     subprocess.run([str(python), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                    "test_inference_supervisor.py"], cwd=root / "BRAIN", check=True, timeout=180)
+                    *tests], cwd=root / "BRAIN", check=True, timeout=180)
     with tempfile.TemporaryDirectory(prefix="brainnet-build-") as out:
         subprocess.run(["npm.cmd", "run", "build", "--", "--outDir", out],
                        cwd=root / PROJECT, check=True, timeout=300)
 
 
-def install(root, commit, prepare, check=validate):
+def install(root, commit, prepare, check=None):
     state = safe_path(root, ".git/brainnet-updates")
     state.mkdir(exist_ok=True)
     lock = safe_path(root, ".git/brainnet-updates/apply.lock")
@@ -136,8 +154,9 @@ def install(root, commit, prepare, check=validate):
             draft.write_text(json.dumps(journal, ensure_ascii=True, indent=2), encoding="utf-8")
             os.replace(draft, manifest)
         for name, (status, old, new) in changes.items():
-            journal["files"][name] = {"status": status, "before_sha256": sha(old), "after_sha256": sha(new)}
-            if status == "UPDATE":
+            journal["files"][name] = {"status": status, "before_sha256": sha(old) if old is not None else None,
+                                      "after_sha256": sha(new)}
+            if status == "UPDATE" and old is not None:
                 backup = run / name
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 backup.write_bytes(old)
@@ -150,7 +169,10 @@ def install(root, commit, prepare, check=validate):
                 if status == "UPDATE":
                     replace_if_unchanged(root, name, old, new)
                     written.append(name)
-            check(root)
+            if check is None:
+                validate(root, changes)
+            else:
+                check(root)
             for name, (status, old, new) in changes.items():
                 expected = new if status == "UPDATE" else old
                 if safe_path(root, name).read_bytes() != expected:
@@ -162,9 +184,15 @@ def install(root, commit, prepare, check=validate):
             for name in reversed(written):
                 _, old, new = changes[name]
                 try:
-                    replace_if_unchanged(root, name, new, old)
-                    if safe_path(root, name).read_bytes() != old:
-                        raise RuntimeError("Restauração divergente")
+                    if old is None:
+                        path = safe_path(root, name)
+                        if path.read_bytes() != new:
+                            raise RuntimeError("Conflito no arquivo adicionado")
+                        path.unlink()
+                    else:
+                        replace_if_unchanged(root, name, new, old)
+                        if safe_path(root, name).read_bytes() != old:
+                            raise RuntimeError("Restauração divergente")
                 except (OSError, RuntimeError, ValueError):
                     conflicts.append(name)
             journal.update(status="ROLLBACK_CONFLICT" if conflicts else "ROLLED_BACK", conflicts=conflicts)

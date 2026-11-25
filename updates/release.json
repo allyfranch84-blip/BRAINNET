@@ -16,6 +16,21 @@
       "path": "iniciar/iniciar_aios.bat",
       "before": "0419a5845549137af7e34353c26408229d13f587f833559d9acd773a990b99c6",
       "after": "9b8dab5e5e9d0c2ec7eb2785347fd4032fce7ecabd840f4be50cfef3ee86cd00"
+    },
+    {
+      "path": "BRAIN/BRAINNET.py",
+      "before": "1191e6eff0be1f46c50653a3f7fce08d1d34d95469ac353d703888c43ef194de",
+      "after": "8e329b5fa57709d35846164ef7e9cc5caa2a514e0ec7f6fa20c392de308d61cd"
+    },
+    {
+      "path": "BRAIN/intent_grounding.py",
+      "before": "c037a4b1699c1508633b0807fe5981821157a1d271fc0cfdde6a51907a0b2aa4",
+      "after": "e74f6a4a3ddba40ffc63b04258aa58d13e819b34dca814e9c0fa50641b560306"
+    },
+    {
+      "path": "BRAIN/test_workspace_choice.py",
+      "before": null,
+      "after": "13f40efe8207053a1956f9e60d3d656a81645eb19400a797cf8d226af4f509c2"
     }
   ]
 }

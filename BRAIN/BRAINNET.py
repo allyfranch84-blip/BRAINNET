@@ -467,6 +467,7 @@ class BrainnetBridge:
         self._p4_lock = threading.Lock()
         self._p4_pending = {}
         self._motor_plan_cache = {}
+        self._pending_app_choice = None
         self._semantic_sequence_lock = threading.Lock()
         self._last_motor_direction = None
         self._ui_motor_window = None
@@ -864,6 +865,10 @@ class BrainnetBridge:
         prompt_raw = text.strip()
         p_low = prompt_raw.lower()
         p_norm = re.sub(r"\s+", " ", p_low).strip()
+        if getattr(getattr(self, '_kernel', None), 'minimal_mode', False) and os.getenv('BRAINNET_MOTOR_SEMANTIC') == '1':
+            choice_reply = self._application_choice_turn(prompt_raw)
+            if choice_reply is not None:
+                return choice_reply
         from workspace_note_chat import handle as handle_notes, note_context, reply as workspace_reply
         from workspace_intent import local_motion, voice_route
         if prompt_raw.startswith('/voz responder '):
@@ -2435,6 +2440,37 @@ class BrainnetBridge:
         logger.info('[P3_GUI] pid=%s task_id=%s status=%s roundtrip_ms=%.3f', os.getpid(), task_id, status, duration_ms)
         return {'ok': True}
 
+    def _application_choice_turn(self, text):
+        from adaptive_resource_controller import current_task_budget
+        from intent_grounding import canonical_app, explicit_app_choices
+        options = explicit_app_choices(text)
+        budget = current_task_budget.get()
+        with self._p4_lock:
+            pending = self._pending_app_choice
+            self._pending_app_choice = None
+            if options and budget is not None:
+                self._pending_app_choice = (budget.task_id, options, time.monotonic() + 120)
+                labels = {'notepad': 'Bloco de Notas', 'paint': 'Paint', 'calculator': 'Calculadora'}
+                return {'status':'CLARIFICATION_REQUIRED', 'code':'APPLICATION_AMBIGUOUS',
+                        'reply':'Qual aplicativo você quer abrir: ' + ' ou '.join(labels[t] for t in options) + '?',
+                        'choices':list(options), 'dispatched':False, 'logs':[]}
+        if pending is None:
+            return None
+        task_id, options, expires = pending
+        selected = canonical_app(text.strip())
+        if selected not in options:
+            return None
+        if time.monotonic() >= expires:
+            return {'status':'CLARIFICATION_REQUIRED', 'code':'CHOICE_EXPIRED', 'dispatched':False,
+                    'reply':'A escolha anterior expirou. Peça novamente para abrir o aplicativo.', 'logs':[]}
+        if not self._semantic_sequence_lock.acquire(blocking=False):
+            return {'status':'BUSY','reply':'Outra tarefa motora está em execução.','dispatched':False,'logs':[]}
+        try:
+            result = self._execute_semantic_motor('Abra ' + selected)
+            return {**result, 'clarified_task_id':task_id, 'selected_target':selected}
+        finally:
+            self._semantic_sequence_lock.release()
+
     def _execute_semantic_motor(self, text):
         """Interpret language once, then execute only validated native motor primitives."""
         from adaptive_resource_controller import current_task_budget, BudgetExhausted
@@ -3060,6 +3096,14 @@ class BrainnetBridge:
                 if self._kernel._runtime_tasks:
                     return {"ok":False,"error":"Há uma tarefa ativa; aguarde ou cancele."}
                 rows=archive.load(chat_id)
+                if chat_id != getattr(self, '_active_workspace_chat', None):
+                    with self._p4_lock:
+                        self._pending_app_choice = None
+                        self._motor_plan_cache.clear()
+                    self._project_conversation.cancel()
+                    from cognitive_context import CognitiveContext
+                    self._cognitive_context = CognitiveContext(self._kernel.vsa)
+                    self._active_workspace_chat = chat_id
                 self._chat_history=archive.history(rows)
                 self._workspace_context_ids=[]
                 self._last_motor_direction=None
@@ -3132,6 +3176,7 @@ class BrainnetBridge:
                 approval.cancel()
                 budget.cancellation_event.set()
             self._p4_pending.clear()
+            self._pending_app_choice = None
         project = getattr(self, '_project_conversation', None)
         if project is not None:
             project.cancel()

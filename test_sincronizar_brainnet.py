@@ -85,6 +85,20 @@ def test_rejects_hash_and_format_mismatches(package):
         prepare()
 
 
+def test_new_file_rollback_and_conflict(tmp_path, package):
+    _, release, _ = package
+    name = "BRAIN/test_workspace_choice.py"
+    path = tmp_path / name
+    release["files"] = [{"path":name, "before":None, "after":sync.source_hash(b"fixture")}]
+    def prepare():
+        return sync.plan(tmp_path, release, lambda _: b"fixture")
+    with pytest.raises(RuntimeError, match="fixture failure"):
+        sync.install(tmp_path, "c"*40, prepare, Mock(side_effect=RuntimeError("fixture failure")))
+    assert not path.exists()
+    path.write_bytes(b"local change")
+    assert prepare()[name][0] == "CONFLICT"
+
+
 def test_legacy_preview_never_runs_installer(tmp_path, monkeypatch, capsys):
     # Real Git object reads. A top-level side effect would reveal execution even in preview.
     def git(*args):
