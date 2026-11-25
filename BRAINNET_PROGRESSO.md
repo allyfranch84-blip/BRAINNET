@@ -1,5 +1,34 @@
 # BRAINNET — registro de desenvolvimento
 
+## Leia primeiro — missão e ordem de execução
+
+O usuário autorizou desenvolvimento, testes reais e publicação de código revisado no GitHub privado. A meta é integrar compreensão de português, esclarecimento de pedidos vagos, execução, observação independente, diagnóstico de falhas e aprendizado reutilizável. Avançar por tarefas verificáveis, com registro a cada rodada.
+
+### Estado que o próximo chat deve conferir
+
+- Código em desenvolvimento: `A:\BRAINNET\BRAINNET\_worktrees\brainnet-capabilities`, branch `codex/brainnet-capabilities`, checkpoint funcional `312e43e`. Destino remoto `allyfranch84-blip/BRAINNET`.
+- Instalação operacional: `A:\BRAINNET`. Os patches da branch de revisão ainda precisam de implantação seletiva com backup e teste do launcher efetivo. Uma alteração no worktree não atualiza a aplicação aberta.
+- Ler `AGENTS.md`, este log e `docs/BRAINNET_CONTINUIDADE.md`. Há informações históricas desatualizadas no documento de continuidade, conferir commits e arquivos antes de agir.
+- O protótipo de corrida é um caso auditado, com mecânica verificada. Criação geral de projetos, aprendizado autônomo de aplicativos e equivalência ao Codex permanecem metas.
+
+### Fila prioritária e critérios
+
+1. **Aprendizado motor** — executar uma tarefa pequena em ambiente descartável pelo handler real, observar o efeito, persistir a experiência e recuperá-la após encerrar o processo de teste. Aplicar o conceito a uma segunda interface com nova observação. Exigir correspondência entre intenção, tarefa, ação, evidência e resultado.
+2. **Falhas e correção** — provocar uma falha controlada, identificar a primeira etapa responsável, tentar estratégia diferente dentro do orçamento e registrar ambas as tentativas. Efeito inconclusivo deve permanecer inconclusivo.
+3. **Português e intenção** — corrigir os dois casos reais do parser 1,5B que falharam, pergunta e negação. Preservar sequência, referência e ambiguidade. Comparar com/sem histórico, medir latência a frio/quente e usar conjunto de avaliação reservado.
+4. **Abstração conceitual** — ampliar mapas de código e cartões de experiência com pré-condições, consequências e evidências. Comparar recuperação lexical, semântica e FHRR/GHRR antes de usar semelhança para escolher uma habilidade.
+5. **Projetos abertos** — generalizar esclarecimento e ciclo de reparo para além do jogo auditado. Executar código gerado em ambiente isolado, verificar artefatos e retomar checkpoints após interrupção.
+6. **Pesquisa e aprendizagem** — exercitar navegador e fontes públicas, Wikipédia, Google e tutoriais YouTube. Preservar URL, versão, trecho e limitações. Validar um procedimento aprendido numa tarefa descartável antes de reutilizá-lo.
+7. **Aplicativos** — priorizar APIs nativas/DOM/UIA e usar visão quando necessário. Provar duas tarefas transferíveis entre aplicativos antes de estender a Excel, Paint, AutoCAD, Photoshop e comunicação.
+8. **Concorrência e energia** — trabalhadores de pesquisa podem ter contextos de navegador separados. O cursor do desktop Windows é compartilhado. Para interação gráfica independente, avaliar sessões/VMs e custos reais. Integrar limites de RAM/VRAM e tarefas em andamento antes de aumentar concorrência.
+9. **Implantação** — comparar apenas arquivos alterados, preservar configurações privadas e bancos, criar backup por SHA-256, instalar seletivamente, testar a GUI efetiva e registrar a versão carregada. Publicar código revisado na branch e conferir o hash remoto.
+
+### Regra de cada rodada
+
+Registrar hipótese, alteração, comando de teste, resultado real/simulado, primeira falha, limites e próximo passo. Atualizar este arquivo na raiz e sua cópia versionada. Para testes demorados, começar com intervalos de 3 segundos e aumentar até 30 segundos após a décima consulta. Nunca substituir evidência ausente por sucesso. O experimento X1 não demonstrou ganho preditivo sobre a referência exata.
+
+
+
 ## 24/11/2026 — primeiro fluxo de projeto verificável
 
 - Branch de revisão `codex/brainnet-capabilities`, a partir da base GitHub `7119d7ab6c861c211a14507ad0196afafdaeda9c` com o patch anterior de intenção reaplicado em `bbe0ae2`.
