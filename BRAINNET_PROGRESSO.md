@@ -74,3 +74,6 @@ Registrar hipótese, alteração, comando de teste, resultado real/simulado, pri
 
 - `/memory concept <ID>` converte um recibo histórico em etapas conceituais e requisitos de revalidação, sem parâmetros de replay. Testes usaram SQLite real descartável com observações simuladas. Seleção inicial: 25 passaram, 1 ignorado (rede opt-in).
 - Próximo ensaio: obter recibo de um efeito motor observado, recuperar o conceito e aplicá-lo a uma segunda interface com nova autorização e verificação. Paralelismo de pesquisa e cursores requer ensaios distintos.
+
+## P55.2 · transporte da extensão
+Novo `BrowserTransport`, filas limitadas, prazos, autenticação e correlação de resultados. 14 testes Python (10 HTTP real loopback) e 6 JS simulados passaram. Worker verifica validade antes de despachar e durante pesquisa. Não instalado no Windows; branch de revisão separada. Relatório `BRAINNET_P55_2_REVIEW.md`.
