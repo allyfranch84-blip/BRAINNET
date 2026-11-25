@@ -158,6 +158,7 @@ function domInspectorAndActuator(payload) {
 
 async function handleCommand(cmd) {
   try {
+    if (!commandIsFresh(cmd)) return {ok:false,error:"Command expired or missing deadline",dispatch_state:"NOT_EXECUTED"};
     if (cmd.action === "RESEARCH_BACKGROUND") return await runBackgroundResearch(cmd, chrome);
     if (cmd.action === "PING") {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -266,6 +267,8 @@ async function startLongPoll() {
         if (!resp.ok) throw Error("Bridge unavailable");
         const cmd = await resp.json();
         if (cmd && /^[0-9a-f]{10}$/.test(cmd.id || "") && typeof cmd.action === "string" && cmd.action !== "IDLE") {
+          const latest = await chrome.storage.local.get("bridgeToken");
+          if (latest.bridgeToken !== token) break;
           const result = await handleCommand(cmd);
           const body = JSON.stringify({id:cmd.id,result});
           await fetch(BRIDGE_URL+"/result",{method:"POST",headers:{...headers,"Content-Type":"application/json"},credentials:"omit",redirect:"error",body,signal:AbortSignal.timeout(5000)});
