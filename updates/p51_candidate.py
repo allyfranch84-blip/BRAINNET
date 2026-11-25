@@ -56,7 +56,7 @@ def load(chat_id):
 
 def history(rows):
     # Bounded context only. Archived messages are data, not current instructions.
-    return [{"role":m["role"],"text":m["text"][:3000],"id":str(m.get("id","")),"timestamp":m.get("timestamp",0)} for m in rows[-120:]]
+    return [{"role":m["role"],"text":m["text"][:3000],"id":str(m.get("id","")),"timestamp":(m.get("timestamp",0)/1000 if isinstance(m.get("timestamp"),(int,float)) and m["timestamp"]>10**11 else 0)} for m in rows[-120:]]
 '''
 
 RICH = r'''
@@ -302,6 +302,7 @@ import {useChatArchive,ChatArchiveMenu,MicControl,LiveTask} from "./shell/ChatWo
     s=once(s,'{ id: uid(), ...m }','{ id: crypto.randomUUID(), timestamp:Date.now(), ...m }')
     s=once(s,'    if (executionRef.current.processing || executionRef.current.stopping) return;\n    const request = ++executionRef.current.id;','    if (!archive.ready.current || executionRef.current.processing || executionRef.current.stopping) return;\n    const request = ++executionRef.current.id;')
     s=once(s,'taskId: res?.task_budget?.task_id });','taskId: res?.task_budget?.task_id, durationMs:roundtripMs, resultStatus:res.status });')
+    s=once(s,'    executionRef.current.processing = true;', '    executionRef.current.processing = true;\n    activeTask.current=null;setTaskTelemetry(null);')
     s=once(s,'  }, [kernel.call, pushLog, pushMessage]);\n\n  useEffect(() => {\n    const selectNote','  }, [kernel.call, pushLog, pushMessage, archive.ready]);\n\n  useEffect(() => {\n    const selectNote')
     s=once(s,'    if (voiceDraft === null || pending) return;','    if (voiceDraft === null || pending || !archive.ready.current) return;')
     s=once(s,'    if (voiceAutoCandidate.current !== voiceDraft) return;','    if (voiceMode !== "direct" || voiceAutoCandidate.current !== voiceDraft) return;')
