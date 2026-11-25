@@ -1003,7 +1003,11 @@ class BrainnetBridge:
             rejected = '; '.join(f"{k}: {v}" for k,v in scene.get('rejection_counts',{}).items())
             focus_note='em primeiro plano' if scene.get('foreground_verified') else f"leitura sem foco confirmado ({scene.get('focus_code','UNKNOWN')})"
             return {'status':'OBSERVED','reply':f"{window['app']} ({focus_note}): {len(names)} controles elegíveis (de {scene.get('raw_count',0)} elementos UIA).\n" + '\n'.join(shown) + ('\nLista limitada a 60.' if len(names)>60 else '') + f'\nDescartados: {rejected or "nenhum"}.','logs':[]}
-        if p_norm == '/motor status':
+        if p_norm in ('/motor status','/inference status'):
+            supervisor=getattr(self._kernel,'inference_supervisor',None)
+            if supervisor is not None:
+                state=supervisor.status()
+                return {'status':state['state'],'reply':f"Inferência: {state['backend']} | {state['state']} | {state['endpoint']} | {state['model']} | reinícios: {state['restarts']} | {state['error'] or 'sem erro registrado'}",'logs':[],'dispatched':False}
             from assistant_prompts import MODELO_PARSER
             from urllib.request import urlopen
             import json
@@ -2305,7 +2309,8 @@ class BrainnetBridge:
             operation = budget.begin_inference(estimated_tokens=512)
             try:
                 budget.record_inference('ollama', model, 'INFERENCE_RUNNING')
-                backend = HTTPInferenceBackend(OLLAMA_GENERATE_URL.removesuffix('/api/generate'), model, 'ollama')
+                supervisor=getattr(self._kernel,'inference_supervisor',None)
+                backend = supervisor.backend(model) if supervisor is not None else HTTPInferenceBackend(OLLAMA_GENERATE_URL.removesuffix('/api/generate'), model, 'ollama')
                 context_data={'open_apps':sorted({w['app'] for w in snapshot.get('windows',[]) if not w['owned']})[:24],
                               'selected_app':ui_window.get('app') if ui_window else None}
                 context_data.update(context_facts)
@@ -2913,6 +2918,12 @@ def start_kernel_thread(kernel_inst: BrainnetKernel) -> None:
 
 if __name__ == "__main__":
     kernel = BrainnetKernel()
+    if os.getenv('BRAINNET_MANAGE_INFERENCE','0')=='1':
+        from inference_supervisor import InferenceSupervisor
+        import atexit
+        kernel.inference_supervisor=InferenceSupervisor()
+        atexit.register(kernel.inference_supervisor.stop)
+        kernel.inference_supervisor.launch(reset=os.getenv('BRAINNET_RESET_INFERENCE','0')=='1')
     bridge = BrainnetBridge(kernel)
 
     t = threading.Thread(target=start_kernel_thread, args=(kernel,), daemon=True)
