@@ -30,3 +30,8 @@
 3. Preserve o caminho curto de Paint, Bloco de Notas e Calculadora para pedidos únicos e inequívocos. O teste garante zero chamadas ao modelo e passagem pelo executor existente. Nomes dinâmicos ainda precisam de inventário e verificação de processo.
 4. Depois do parser, conectar execução isolada para projetos fora do protótipo 2D e provar a retomada de uma tarefa interrompida. Testar busca em fontes e transferência de uma habilidade em dois aplicativos antes de ampliar memória ou interface.
 5. Em testes longos, verificar a cada 3 s inicialmente. A partir da décima checagem, aumentar gradualmente até 30 s. Anotar primeiro erro, correção, comando, resultado e commit. Publicar somente arquivos revisados.
+
+## Aprendizado motor — abstração de experiência
+
+- `/memory concept <ID>` converte um recibo histórico em etapas conceituais e requisitos de revalidação, sem parâmetros de replay. Testes usaram SQLite real descartável com observações simuladas. Seleção inicial: 25 passaram, 1 ignorado (rede opt-in).
+- Próximo ensaio: obter recibo de um efeito motor observado, recuperar o conceito e aplicá-lo a uma segunda interface com nova autorização e verificação. Paralelismo de pesquisa e cursores requer ensaios distintos.

@@ -96,3 +96,28 @@ class ExperienceJournal:
             conn.execute('INSERT INTO verified_experiences VALUES (?,?,?,?,?,?,?,?,?)',
                 (record_id,str(task_id)[:128],time.time(),label,data,blob,DIM,ENCODING,checksum))
         return record_id
+
+
+def describe_experience(directory, record_id):
+    """Translate a historical receipt into a non-executable concept card."""
+    from memory_recall import read_record
+
+    record = read_record(directory, 'verified_experiences', record_id)
+    if record['status'] != 'OBSERVED':
+        return {'status': record['status'], 'execution_authorized': False}
+    from motor_intent import validate_plan
+
+    try:
+        receipt = json.loads(record['payload'])
+        if receipt.get('effect_verified') is not True:
+            raise ValueError('unverified effect')
+        plan = validate_plan({'status': 'execute', 'steps': receipt['steps']})
+        names = {'open_app': 'Disponibilizar janela', 'move_to': 'Localizar controle e posicionar cursor',
+                 'move': 'Deslocar cursor'}
+        stages = [names[step['action']] for step in plan['steps']]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return {'status': 'INCONCLUSIVE', 'execution_authorized': False}
+    return {'status': 'OBSERVED', 'record_id': record_id, 'app': receipt.get('app'),
+            'stages': stages, 'execution_authorized': False, 'goal_verified': False,
+            'requirements': ['Revalidar aplicativo, janela e alvo no contexto atual.',
+                             'Obter autorização atual antes de uma nova execução.']}

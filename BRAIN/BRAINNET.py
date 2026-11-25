@@ -921,6 +921,19 @@ class BrainnetBridge:
             for entry in outcome['sources']:
                 lines.append(f"{entry['table']}: {entry['status']} ({entry.get('scanned',0)} examinados)" + ('; limite atingido' if entry.get('possibly_truncated') else ''))
             return {'status':outcome['status'],'reply':'\n'.join(lines),'memory_recall':outcome,'logs':[],'dispatched':False}
+        if p_norm.startswith('/memory concept '):
+            from pathlib import Path
+            from experience_journal import describe_experience
+            try:
+                concept = describe_experience(Path(__file__).resolve().parent, prompt_raw.split(maxsplit=2)[2])
+            except ValueError:
+                return {'status': 'TARGET_REQUIRED', 'reply': 'Use /memory concept <ID da experiência>.', 'logs': []}
+            if concept['status'] == 'OBSERVED':
+                reply = 'Experiência histórica abstraída: ' + ' → '.join(concept['stages']) + '. '
+                reply += ' '.join(concept['requirements'])
+            else:
+                reply = 'Experiência indisponível para abstração.'
+            return {'status': concept['status'], 'reply': reply, 'concept': concept, 'logs': [], 'dispatched': False}
         if p_norm.startswith('/memory read '):
             from pathlib import Path
             from memory_recall import read_record

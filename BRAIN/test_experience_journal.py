@@ -51,3 +51,15 @@ def test_complete_sequence_and_noncommutative_encoding(tmp_path):
     assert engine.similarity(a,a)>.99
     assert engine.similarity(a,b)<.95
     assert verified_receipt(p,{**result,'sequence_results':list(reversed(result['sequence_results']))}) is None
+
+
+def test_concept_card_reopens_real_sqlite_and_has_no_replay_parameters(tmp_path):
+    from experience_journal import describe_experience
+
+    record_id = ExperienceJournal(tmp_path).append(
+        'open', plan(OPEN), {'status': 'EFFECT_VERIFIED', 'context_window': {'app': 'mspaint.exe'}})
+    card = describe_experience(tmp_path, record_id)
+    assert card['status'] == 'OBSERVED'
+    assert card['stages'] == ['Disponibilizar janela']
+    assert card['execution_authorized'] is False and card['goal_verified'] is False
+    assert 'steps' not in card and 'hwnd' not in card
