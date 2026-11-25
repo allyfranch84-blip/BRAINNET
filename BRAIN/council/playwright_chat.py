@@ -1,5 +1,5 @@
 # =============================================================================
-# council/playwright_chat.py — Adaptador Universal Baseado em SiteProfile
+# council/playwright_chat.py — Adaptador Universal com LocatorStrategy
 # =============================================================================
 
 import asyncio
@@ -10,41 +10,47 @@ from typing import Optional, List
 
 from .ports import ChatPort, ChatTurn
 from .playwright_browser import PlaywrightBrowserAdapter
+from .locator import LocatorTarget
 
 logger = logging.getLogger("Council.WebChat")
-
-# =============================================================================
-# SITE PROFILES (Configuração pura, sem lógica)
-# =============================================================================
 
 @dataclass
 class SiteProfile:
     name: str
     url: str
-    textarea_selectors: List[str]
-    send_button_selectors: List[str]
-    response_selectors: List[str]
+    textarea: LocatorTarget
+    send_button: LocatorTarget
+    response_area: LocatorTarget
 
-# Perfis prontos. Fáceis de manter.
+# PERFIS DE SITES (Fáceis de dar manutenção)
 CHATGPT_PROFILE = SiteProfile(
     name="ChatGPT",
     url="https://chatgpt.com",
-    textarea_selectors=['#prompt-textarea', 'textarea[data-id]', 'textarea'],
-    send_button_selectors=['button[data-testid="send-button"]', 'button[aria-label*="Send"]', 'button[aria-label*="Enviar"]'],
-    response_selectors=['[data-message-author-role="assistant"]', 'article[data-testid]', '.markdown']
+    textarea=LocatorTarget(
+        name="caixa de texto", 
+        css="#prompt-textarea", 
+        role="textbox", 
+        placeholder="Message ChatGPT"
+    ),
+    send_button=LocatorTarget(
+        name="botão enviar", 
+        css='button[data-testid="send-button"]', 
+        aria_label="Send"
+    ),
+    response_area=LocatorTarget(
+        name="resposta", 
+        css='[data-message-author-role="assistant"]', 
+        role="article"
+    )
 )
 
 DEEPSEEK_PROFILE = SiteProfile(
     name="DeepSeek",
     url="https://chat.deepseek.com",
-    textarea_selectors=['textarea#chat-input', 'textarea'],
-    send_button_selectors=['button[aria-label*="Send"]', 'div[role="button"][aria-label*="Send"]'],
-    response_selectors=['.ds-markdown', '.markdown', '[class*="message"]']
+    textarea=LocatorTarget(name="input", css="textarea#chat-input", placeholder="Send a message"),
+    send_button=LocatorTarget(name="botão", css='div[role="button"]', aria_label="Send"),
+    response_area=LocatorTarget(name="resposta", css=".ds-markdown", role="article")
 )
-
-# =============================================================================
-# PROVIDER UNIVERSAL
-# =============================================================================
 
 class WebConversationProvider(ChatPort):
     def __init__(self, profile: SiteProfile, browser: PlaywrightBrowserAdapter):
@@ -53,86 +59,72 @@ class WebConversationProvider(ChatPort):
         self.is_open = False
         self.last_response = ""
 
-    async def _find_element(self, selectors: List[str]):
-        """Tenta cada seletor da lista até achar um visível."""
-        if not self.browser.page: return None
-        for sel in selectors:
-            try:
-                locator = self.browser.page.locator(sel).first
-                if await locator.is_visible():
-                    return locator
-            except Exception:
-                continue
-        return None
-
     async def _ensure_open(self):
         if not self.is_open:
             await self.browser.open(self.profile.url)
             self.is_open = True
             
-            # AUTO-DETECÇÃO DE LOGIN
+            # Auto-detecção de Login
             print(f"\nVerificando login no {self.profile.name}...")
             is_logged_in = False
-            for _ in range(10): # Tenta por 10 segundos
-                if await self._find_element(self.profile.textarea_selectors):
+            for _ in range(10):
+                if await self.browser.find(self.profile.textarea, timeout=2000):
                     is_logged_in = True
                     break
                 await asyncio.sleep(1)
                 
             if is_logged_in:
-                print("✅ Login detectado com sucesso!")
+                print("✅ Login detectado!")
             else:
-                print(f"\n⚠️ ATENÇÃO: A caixa de texto do {self.profile.name} não foi encontrada.")
-                print("Faça o login na janela que abriu e aperte ENTER no terminal.")
+                print(f"\n⚠️ ATENÇÃO: Faça o login no {self.profile.name} e aperte ENTER no terminal.")
                 input("Pressione ENTER para continuar...")
 
     async def send_prompt(self, prompt: str) -> None:
         await self._ensure_open()
         
-        # 1. Encontra a caixa de texto
-        textarea = await self._find_element(self.profile.textarea_selectors)
+        # 1. Achar Caixa de Texto
+        textarea = await self.browser.find(self.profile.textarea)
         if not textarea:
             raise RuntimeError(f"Caixa de texto não encontrada no {self.profile.name}")
 
         await textarea.fill(prompt)
         
-        # 2. Estratégia de Envio em Cascata
+        # 2. Estratégia de Envio (Cascata)
         logger.info("Tentando enviar mensagem...")
         
-        # Nível 1: Botão aria-label
-        btn = await self._find_element(self.profile.send_button_selectors)
+        # Prioridade 1: Botão Enviar (via LocatorStrategy)
+        btn = await self.browser.find(self.profile.send_button, timeout=3000)
         if btn:
             await btn.click()
-            logger.info("Enviado via botão aria-label.")
+            logger.info("Enviado via botão.")
             return
 
-        # Nível 2: Enter
-        logger.info("Botão não encontrado. Tentando Enter...")
+        # Prioridade 2: Mouse Virtual (Bounding Box da Textarea)
+        logger.info("Botão não encontrado. Calculando posição por Visão...")
+        box = await textarea.bounding_box()
+        if box:
+            btn_x = box["x"] + box["width"] - 25
+            btn_y = box["y"] + (box["height"] / 2)
+            await self.browser.click_at(btn_x, btn_y)
+            logger.info("Enviado via mouse virtual.")
+            return
+            
+        # Prioridade 3: Enter (Fallback Final)
+        logger.warning("Visão falhou. Usando ENTER.")
         await self.browser.page.keyboard.press("Enter")
 
     async def _get_last_response_text(self) -> str:
-        """Usa a cascata de seletores para pegar o texto da última resposta."""
-        if not self.browser.page: return ""
-        
-        for sel in self.profile.response_selectors:
+        """Lê a última resposta usando LocatorStrategy."""
+        element = await self.browser.find(self.profile.response_area, timeout=2000)
+        if element:
             try:
-                locator = self.browser.page.locator(sel)
-                if await locator.count() > 0:
-                    # Pega a última mensagem visível
-                    text = await locator.last.inner_text()
-                    if text.strip():
-                        return text
-            except Exception:
-                continue
+                return await element.inner_text()
+            except:
+                pass
         return ""
 
     async def wait_generation(self, timeout: float = 180.0) -> bool:
-        """
-        Usa Estabilidade de Texto em vez de depender do botão 'Stop'.
-        Fica lendo a última mensagem até ela parar de mudar por 2 segundos.
-        """
-        if not self.browser.page: return False
-        
+        """Usa Estabilidade de Texto (Text Polling)."""
         logger.info("Aguardando resposta (Estabilidade de Texto)...")
         start_time = time.time()
         last_text = ""

@@ -1,5 +1,5 @@
 # =============================================================================
-# council/playwright_browser.py — Adaptador Real com Mouse Virtual
+# council/playwright_browser.py — Adaptador Real com Localização em Cascata
 # =============================================================================
 
 import asyncio
@@ -10,6 +10,7 @@ from typing import Optional
 from playwright.async_api import async_playwright, Browser, Page
 
 from .ports import BrowserPort, ElementRef, Evidence
+from .locator import LocatorTarget, find_robust_locator
 
 logger = logging.getLogger("Council.Browser")
 
@@ -35,7 +36,6 @@ class PlaywrightBrowserAdapter(BrowserPort):
             }
 
             if self.executable_path:
-                logger.info(f"Usando navegador customizado: {self.executable_path}")
                 launch_args["executable_path"] = self.executable_path
             
             try:
@@ -50,74 +50,62 @@ class PlaywrightBrowserAdapter(BrowserPort):
         await self.page.goto(url, wait_until="domcontentloaded")
 
     async def focus(self) -> None:
-        if self.page:
-            await self.page.bring_to_front()
+        if self.page: await self.page.bring_to_front()
+
+    async def find(self, target: LocatorTarget, timeout: int = 5000):
+        """Usa a cascata de localização para achar um elemento."""
+        if not self.page: return None
+        return await find_robust_locator(self.page, target, timeout)
 
     async def click(self, target: ElementRef | str) -> None:
+        # Fallback simples se for chamado sem LocatorTarget
         if not self.page: return
         selector = target if isinstance(target, str) else f"[id='{target.id}']"
         await self.page.click(selector)
 
-    # --- MÉTODOS DE VISÃO E MOUSE VIRTUAL ---
     async def click_at(self, x: float, y: float) -> None:
-        """Clica em coordenadas absolutas da tela (mouse virtual)."""
+        """Clica em coordenadas absolutas (Mouse Virtual)."""
         if not self.page: return
         logger.info(f"Mouse virtual clicando em X:{x}, Y:{y}")
         await self.page.mouse.click(x, y)
 
-    async def get_bounding_box(self, selector: str) -> Optional[dict]:
-        """Retorna a posição e tamanho de um elemento na tela."""
-        if not self.page: return None
-        try:
-            element = self.page.locator(selector).first
+    async def get_bounding_box(self, target: LocatorTarget) -> Optional[dict]:
+        """Pega a posição e tamanho de um elemento usando a cascata."""
+        element = await self.find(target)
+        if element:
             return await element.bounding_box()
-        except Exception:
-            return None
-    # ---------------------------------------
+        return None
 
     async def scroll(self, direction: str, amount: int = 500) -> None:
         if not self.page: return
-        if direction == "down":
-            await self.page.mouse.wheel(0, amount)
-        elif direction == "up":
-            await self.page.mouse.wheel(0, -amount)
+        if direction == "down": await self.page.mouse.wheel(0, amount)
+        elif direction == "up": await self.page.mouse.wheel(0, -amount)
 
     async def paste(self, text: str) -> None:
-        if not self.page: return
-        await self.page.keyboard.insert_text(text)
+        if self.page: await self.page.keyboard.insert_text(text)
 
     async def copy(self) -> str:
-        return "" 
+        return ""
 
     async def capture(self, path: Optional[str] = None) -> Evidence:
         if not self.page: raise RuntimeError("Navegador não aberto")
         screenshot_bytes = await self.page.screenshot(full_page=False)
-        
-        if path:
-            Path(path).write_bytes(screenshot_bytes)
-            
-        return Evidence(
-            kind="screenshot",
-            path=path,
-            content=base64.b64encode(screenshot_bytes).decode("utf-8")
-        )
+        if path: Path(path).write_bytes(screenshot_bytes)
+        return Evidence(kind="screenshot", path=path, content=base64.b64encode(screenshot_bytes).decode("utf-8"))
 
     async def wait_element(self, target: ElementRef | str, timeout: float = 30.0, state: str = "visible") -> ElementRef:
         if not self.page: raise RuntimeError("Navegador não aberto")
         selector = target if isinstance(target, str) else f"[id='{target.id}']"
-        
         await self.page.wait_for_selector(selector, timeout=timeout*1000, state=state)
         return ElementRef(id=selector)
 
     async def find_text(self, text: str) -> list[ElementRef]:
         if not self.page: return []
         locator = self.page.get_by_text(text, exact=False)
-        count = await locator.count()
-        return [ElementRef(id=f"text_locator_{i}", text=text) for i in range(count)]
+        return [ElementRef(id="text_match", text=text) for _ in range(await locator.count())]
 
     async def send_enter(self) -> None:
-        if self.page:
-            await self.page.keyboard.press("Enter")
+        if self.page: await self.page.keyboard.press("Enter")
 
     async def upload_file(self, path: str, target: ElementRef | str) -> None:
         pass 
@@ -129,7 +117,5 @@ class PlaywrightBrowserAdapter(BrowserPort):
         return {}
 
     async def close(self) -> None:
-        if self.browser:
-            await self.browser.close()
-        if self.pw:
-            await self.pw.stop()
+        if self.browser: await self.browser.close()
+        if self.pw: await self.pw.stop()
