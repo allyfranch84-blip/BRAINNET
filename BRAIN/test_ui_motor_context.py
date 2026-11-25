@@ -96,10 +96,22 @@ def test_unrelated_focus_change_blocks_before_motor():
     motor.mouse_move.assert_not_called()
 
 
-def test_app_launch_schema_accepts_only_supported_application():
+def test_app_launch_schema_accepts_explicit_dynamic_application_name_only():
     assert validate_plan({'status':'execute','steps':[{'action':'open_app','target':'paint'}]})
+    assert validate_plan({'status':'execute','steps':[{'action':'open_app','target':'Visual Studio Code'}]})
     with pytest.raises(ValueError):
-        validate_plan({'status':'execute','steps':[{'action':'open_app','target':'cmd.exe'}]})
+        validate_plan({'status':'execute','steps':[{'action':'open_app','target':'   '} ]})
+
+
+def test_open_application_reuses_verified_notepad_alias_before_dynamic_lookup():
+    from ui_motor_context import open_application
+    from execution_authority import authorization_scope
+    with authorization_scope(threading.Event()), \
+         patch('ui_motor_context.os.path.isfile', return_value=False), \
+         patch('causal_trajectory.DynamicAppInventory.resolve_exact') as dynamic:
+        result = open_application('Bloco de Notas', deadline=time.monotonic() + 1)
+    assert result['code'] == 'APP_EXECUTABLE_MISSING'
+    dynamic.assert_not_called()
 
 
 def test_focus_handoff_from_own_chat_to_selected_window():

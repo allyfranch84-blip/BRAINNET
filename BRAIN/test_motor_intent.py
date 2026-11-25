@@ -40,7 +40,7 @@ def test_semantic_plan_executes_multiple_observed_movements_and_reuses_verified_
         assert approval.consume(proposal,state)
         state['cursor'] = proposal.target
         return {'status':'EFFECT_VERIFIED','after':proposal.target}
-    response = SimpleNamespace(text='{"status":"execute","steps":[{"action":"move","direction":"up","distance":50},{"action":"move","direction":"left","distance":30}]}',finish_reason='stop',output_tokens=60)
+    response = SimpleNamespace(text='{"intent_type":"composite","steps":[{"action":"move","direction":"up","distance":50},{"action":"move","direction":"left","distance":30}]}',finish_reason='stop',output_tokens=60)
     try:
         with patch.dict('os.environ',{'BRAINNET_MOTOR_SEMANTIC':'1'}), \
              patch('capability_lab.observe_physical_monitor',side_effect=lambda: dict(state)), \
@@ -59,12 +59,36 @@ def test_semantic_plan_executes_multiple_observed_movements_and_reuses_verified_
 def test_semantic_question_does_not_execute():
     from test_p44_direct_move import _bridge
     bridge,kernel,patches = _bridge({})
-    response = SimpleNamespace(text='{"status":"none","steps":[]}',finish_reason='stop',output_tokens=12)
+    response = SimpleNamespace(text='{"intent_type":"none"}',finish_reason='stop',output_tokens=12)
     try:
         with patch.dict('os.environ',{'BRAINNET_MOTOR_SEMANTIC':'1'}), \
              patch('inference_backend.HTTPInferenceBackend.chat',return_value=response), \
              patch.object(bridge,'_dispatch_direct_p4_move') as dispatch:
             result=bridge.send_command('como mover o mouse?')
+        assert result['dispatched'] is False
+        dispatch.assert_not_called()
+    finally:
+        for p in reversed(patches):p.stop()
+
+
+def test_contaminated_atomic_model_response_is_rejected_before_dispatch():
+    """A prior task cannot turn a new atomic open into a sequence."""
+    from test_p44_direct_move import _bridge
+    state = {'status':'OBSERVED','coordinate_space':'PHYSICAL','cursor':(200,200),'monitor':'DISPLAY','monitor_rect':(0,0,800,800)}
+    bridge,kernel,patches = _bridge(state)
+    # This is deliberately malformed for the new discriminator: it claims an
+    # atomic intent but carries a second historical UI action.
+    response = SimpleNamespace(
+        text=('{"intent_type":"atomic","step":{"action":"open_app","target":"notepad"},'
+              '"steps":[{"action":"move_to","target":"Ampliar"}]}'),
+        finish_reason='stop', output_tokens=20)
+    try:
+        with patch.dict('os.environ',{'BRAINNET_MOTOR_SEMANTIC':'1'}), \
+             patch('capability_lab.observe_physical_monitor',return_value=state), \
+             patch('inference_backend.HTTPInferenceBackend.chat',return_value=response), \
+             patch.object(bridge,'_dispatch_direct_p4_move') as dispatch:
+            result=bridge.send_command('Abra o Bloco de Notas')
+        assert result['status']=='UNAVAILABLE'
         assert result['dispatched'] is False
         dispatch.assert_not_called()
     finally:

@@ -2273,7 +2273,7 @@ class BrainnetBridge:
         from adaptive_resource_controller import current_task_budget, BudgetExhausted
         from assistant_prompts import MODELO_PARSER
         from inference_backend import HTTPInferenceBackend, InferenceRequest, BackendUnavailable, ModelUnavailable, InferenceTimeout
-        from motor_intent import SYSTEM_PROMPT, parse_response, resolve_move, MAX_DISTANCE
+        from motor_intent import SYSTEM_PROMPT, parse_semantic_response, resolve_move, MAX_DISTANCE
         from intent_grounding import ground_plan, mentioned_apps
         from capability_lab import observe_physical_monitor, observe_cursor_monitors
         from execution_authority import PhysicalMoveProposal, PhysicalMoveApproval, authorization_scope
@@ -2322,7 +2322,7 @@ class BrainnetBridge:
                 result = backend.chat(request)
                 if result.finish_reason in ('length','max_tokens'):
                     raise ValueError('truncated motor plan')
-                plan = parse_response(result.text)
+                plan = parse_semantic_response(result.text)
             except Exception as exc:
                 supervisor=getattr(self._kernel,'inference_supervisor',None)
                 if supervisor is not None:

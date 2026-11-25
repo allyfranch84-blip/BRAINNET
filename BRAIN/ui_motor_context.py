@@ -1,6 +1,7 @@
 """Live UIA grounding for a user-selected window. No stored coordinates or COM objects."""
 import math
 import os
+import subprocess
 import time
 import uuid
 import unicodedata
@@ -14,6 +15,41 @@ CONTROL_TYPES = frozenset(('ButtonControl','SplitButtonControl','MenuItemControl
 def normalize(value):
     return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', str(value).casefold())
                            if not unicodedata.combining(c)).split())
+
+
+def _shortcut_target(path):
+    """Resolve a Windows shortcut without executing it."""
+    import win32com.client
+    shortcut = win32com.client.Dispatch('WScript.Shell').CreateShortcut(path)
+    return shortcut.Targetpath, shortcut.Arguments
+
+
+def dynamic_launch_path(entry):
+    """Return one verified executable from an enumerated inventory entry.
+
+    A ``.lnk`` is never dispatched directly: its resolved target must be an
+    existing executable and it must carry no arguments.  This keeps an LLM
+    supplied application name from becoming a shell command or an implicit
+    command chain stored inside a shortcut.
+    """
+    if not isinstance(entry, dict) or entry.get('tipo') not in ('PATH', 'LNK'):
+        return None, 'APP_NOT_ENUMERATED'
+    path = entry.get('cmd')
+    if not isinstance(path, str) or not path:
+        return None, 'APP_ENTRY_INVALID'
+    if entry['tipo'] == 'LNK':
+        if not os.path.isfile(path):
+            return None, 'APP_ENTRY_INVALID'
+        try:
+            path, arguments = _shortcut_target(path)
+        except Exception:
+            return None, 'APP_SHORTCUT_UNRESOLVED'
+        if not isinstance(arguments, str) or arguments.strip():
+            return None, 'APP_SHORTCUT_ARGUMENTS_BLOCKED'
+    if (not isinstance(path, str) or not os.path.isabs(path)
+            or not os.path.isfile(path) or os.path.splitext(path)[1].casefold() != '.exe'):
+        return None, 'APP_ENTRY_INVALID'
+    return path, None
 
 
 def find_window(query, *, allow_minimized=False):
@@ -367,7 +403,6 @@ def execute_target(window, step, eye, effector, *, task_id, deadline, expected_c
 def open_application(app, *, deadline):
     """Launch only an enumerated OS application, then verify the live window."""
     from execution_authority import require_action_allowed
-    import subprocess
     import win32api
     import win32gui
     mapping = {
@@ -375,9 +410,13 @@ def open_application(app, *, deadline):
         'notepad': ('notepad.exe', ('notepad.exe',)),
         'calculator': ('calc.exe', ('CalculatorApp.exe','Calculator.exe','calc.exe')),
     }
-    if app not in mapping:
+    if not isinstance(app,str) or not app.strip() or len(app)>120:
         return {'status':'ACTION_BLOCKED','code':'UNKNOWN_APP','dispatched':False}
-    executable, processes = mapping[app]
+    from intent_grounding import canonical_app
+    # Reuse the existing verified aliases for core Windows applications, then
+    # require an exact DynamicAppInventory entry for all other application names.
+    app=canonical_app(app) or normalize(app)
+    static=mapping.get(app)
     def lookup():
         import win32process
         import psutil
@@ -389,7 +428,11 @@ def open_application(app, *, deadline):
                     return True
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 process = psutil.Process(pid).name()
-                if process.casefold() in tuple(p.casefold() for p in processes):
+                if static is not None:
+                    matches_process=process.casefold() in tuple(p.casefold() for p in static[1])
+                else:
+                    matches_process=(normalize(app) in normalize(process) or normalize(app) in normalize(win32gui.GetWindowText(hwnd)))
+                if matches_process:
                     identity = inspect_window(hwnd)
                     if identity and identity['pid'] == pid:
                         windows.append({**identity,'app':process})
@@ -406,9 +449,16 @@ def open_application(app, *, deadline):
     matches=lookup()
     launched=False
     if not matches:
-        path=os.path.join(win32api.GetSystemDirectory(),executable)
-        if not os.path.isfile(path):
-            return {'status':'UNAVAILABLE','code':'APP_EXECUTABLE_MISSING','dispatched':False}
+        if static is not None:
+            path=os.path.join(win32api.GetSystemDirectory(),static[0])
+            if not os.path.isfile(path):
+                return {'status':'UNAVAILABLE','code':'APP_EXECUTABLE_MISSING','dispatched':False}
+        else:
+            from causal_trajectory import DynamicAppInventory
+            entry=DynamicAppInventory().resolve_exact(app)
+            path, code=dynamic_launch_path(entry)
+            if code:
+                return {'status':'ACTION_BLOCKED','code':code,'dispatched':False}
         check()
         subprocess.Popen([path],shell=False)
         launched=True

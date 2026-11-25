@@ -13,6 +13,11 @@ def test_open_notepad_does_not_replay_previous_paint_operations():
             {'action':'click_target','target':'Ampliar','button':'left','count':1}))
     assert ground_plan('Abra o Bloco de Notas',plan({'action':'open_app','target':'notepad'}))['steps']==[{'action':'open_app','target':'notepad'}]
 
+def test_dynamic_app_name_must_be_explicitly_present_in_current_utterance():
+    assert ground_plan('Abra o Visual Studio Code',plan({'action':'open_app','target':'Visual Studio Code'}))['steps']==[{'action':'open_app','target':'Visual Studio Code'}]
+    with pytest.raises(ValueError,match='OPEN_APP_NOT_GROUNDED'):
+        ground_plan('Abra o Bloco de Notas',plan({'action':'open_app','target':'Visual Studio Code'}))
+
 def test_move_in_paint_is_bound_to_paint_even_when_model_omits_app():
     result=ground_plan('Mova o mouse até Ampliar no Paint',plan({'action':'move_to','target':'Ampliar'}))
     assert result['steps']==[{'action':'move_to','target':'Ampliar','app':'paint'}]

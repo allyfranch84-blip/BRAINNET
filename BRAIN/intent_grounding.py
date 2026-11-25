@@ -34,6 +34,11 @@ def has_reference(text):
     tokens=words(text)
     return any(t in tokens for t in ('nele','nela','nesse','nessa','neste','nesta','esse','essa','este','esta','isso','anterior','mesmo','mesma'))
 
+def mentions_exact_app(text, target):
+    """Textual grounding for a dynamic application name, never a command."""
+    target_words=words(target)
+    return bool(target_words) and contains(words(text), target_words)
+
 # Lexical evidence is only a veto on an unexpected side effect; the semantic
 # model still chooses every action, order, quantity and target.
 OPEN_CUES=frozenset(('abra','abrir','abre','inicie','iniciar','execute','executar','lance','lancar','rode','rodar','carregue','carregar'))
@@ -55,7 +60,10 @@ def ground_plan(text,plan,*,reference=None):
     for step in bound['steps']:
         action=step['action']
         if action=='open_app':
-            if step['target'] not in apps or not token_set & OPEN_CUES:
+            canonical_target=canonical_app(step['target'])
+            target_mentioned=(mentions_exact_app(text, step['target'])
+                              or (canonical_target is not None and canonical_target in apps))
+            if not target_mentioned or not token_set & OPEN_CUES:
                 raise ValueError('OPEN_APP_NOT_GROUNDED')
             active=step['target']
             target=None

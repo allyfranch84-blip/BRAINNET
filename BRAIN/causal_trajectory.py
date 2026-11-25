@@ -185,6 +185,21 @@ class DynamicAppInventory:
 
         return None
 
+    def resolve_exact(self, target_concept: str) -> Optional[Dict[str, str]]:
+        """Return only an exact, enumerated app affordance.
+
+        This is intentionally separate from the experimental probabilistic
+        resolver: language-model output must never select an approximate match
+        or manufacture a command line.
+        """
+        if not isinstance(target_concept, str):
+            return None
+        key = " ".join(target_concept.casefold().split())
+        if not key:
+            return None
+        entry = self.refresh_inventory(force=False).get(key)
+        return dict(entry) if isinstance(entry, dict) else None
+
 
 class WindowsAppResolver:
     """
